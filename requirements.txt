@@ -1,0 +1,7 @@
+opencv-python==4.8.1.78
+numpy<2.0
+paramiko==3.4.0
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+colorama==0.4.6
+

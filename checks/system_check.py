@@ -1,0 +1,486 @@
+"""
+시스템 종합 점검 모듈
+OS, 서비스, Java, Network 등 종합적인 시스템 상태 확인
+(check_edge_status.sh 기능 통합)
+"""
+import os
+import subprocess
+import re
+from typing import Dict, Any, List
+
+
+def run_command(cmd: str) -> Dict[str, Any]:
+    """명령어 실행 헬퍼"""
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10
+        )
+        return {
+            'success': result.returncode == 0,
+            'stdout': result.stdout.strip(),
+            'stderr': result.stderr.strip(),
+            'returncode': result.returncode
+        }
+    except subprocess.TimeoutExpired:
+        return {'success': False, 'stdout': '', 'stderr': 'Timeout', 'returncode': -1}
+    except Exception as e:
+        return {'success': False, 'stdout': '', 'stderr': str(e), 'returncode': -1}
+
+
+def check_os_settings() -> Dict[str, Any]:
+    """OS 설정 확인 (타임존, 로케일)"""
+    results = {}
+    
+    # 타임존 확인
+    tz_result = run_command("timedatectl | grep 'Time zone'")
+    if tz_result['success']:
+        is_utc = 'UTC' in tz_result['stdout'] or 'Etc/UTC' in tz_result['stdout']
+        results['timezone'] = {
+            'status': 'PASS' if is_utc else 'WARN',
+            'value': tz_result['stdout'],
+            'expected': 'UTC'
+        }
+    else:
+        results['timezone'] = {'status': 'FAIL', 'value': 'Unknown'}
+    
+    # 로케일 확인
+    locale_result = run_command("grep -E '^LANG=' /etc/default/locale 2>/dev/null || echo $LANG")
+    if locale_result['success']:
+        is_ko_utf8 = 'ko_KR.UTF-8' in locale_result['stdout']
+        results['locale'] = {
+            'status': 'PASS' if is_ko_utf8 else 'WARN',
+            'value': locale_result['stdout'],
+            'expected': 'ko_KR.UTF-8'
+        }
+    else:
+        results['locale'] = {'status': 'SKIP', 'value': 'Unknown'}
+    
+    # 인코딩 확인
+    encoding_result = run_command("locale charmap")
+    if encoding_result['success']:
+        is_utf8 = 'UTF-8' in encoding_result['stdout']
+        results['encoding'] = {
+            'status': 'PASS' if is_utf8 else 'FAIL',
+            'value': encoding_result['stdout'],
+            'expected': 'UTF-8'
+        }
+    else:
+        results['encoding'] = {'status': 'SKIP', 'value': 'Unknown'}
+    
+    return results
+
+
+def check_services() -> Dict[str, Any]:
+    """주요 서비스 상태 확인"""
+    services = {
+        'tomcat': ['tomcat', 'tomcat9', 'tomcat10'],
+        'postgresql': ['postgresql', 'postgresql@14-main'],
+        'nut-server': ['nut-server'],
+        'nut-monitor': ['nut-monitor', 'upsmon'],
+        'stream': ['stream']
+    }
+    
+    results = {}
+    
+    for service_name, candidates in services.items():
+        found = False
+        for candidate in candidates:
+            status_result = run_command(f"systemctl is-active {candidate} 2>/dev/null")
+            if status_result['returncode'] != 4:  # 4 = service not found
+                is_active = status_result['stdout'] == 'active'
+                results[service_name] = {
+                    'status': 'PASS' if is_active else 'FAIL',
+                    'service': candidate,
+                    'state': status_result['stdout']
+                }
+                found = True
+                break
+        
+        if not found:
+            results[service_name] = {
+                'status': 'SKIP',
+                'service': service_name,
+                'state': 'not found'
+            }
+    
+    return results
+
+
+def check_ports() -> Dict[str, Any]:
+    """주요 포트 리스닝 확인"""
+    ports = {
+        'HTTP (80)': '80',
+        'PostgreSQL (5432)': '5432',
+        'NUT (3493)': '3493'
+    }
+    
+    results = {}
+    
+    for name, port in ports.items():
+        ss_result = run_command(f"ss -tlnp | grep ':{port}'")
+        if ss_result['success'] and ss_result['stdout']:
+            results[name] = {
+                'status': 'PASS',
+                'listening': True,
+                'details': ss_result['stdout'].split('\n')[0][:80]
+            }
+        else:
+            results[name] = {
+                'status': 'FAIL',
+                'listening': False,
+                'details': 'Not listening'
+            }
+    
+    return results
+
+
+def check_java() -> Dict[str, Any]:
+    """Java 설정 확인"""
+    results = {}
+    
+    # Java 버전
+    java_result = run_command("java -version 2>&1")
+    if java_result['returncode'] == 0:
+        version_match = re.search(r'version "(\d+)', java_result['stdout'])
+        if version_match:
+            major_version = int(version_match.group(1))
+            is_jdk17 = major_version >= 17
+            results['version'] = {
+                'status': 'PASS' if is_jdk17 else 'WARN',
+                'value': f"Java {major_version}",
+                'expected': 'Java 17+'
+            }
+        else:
+            results['version'] = {'status': 'WARN', 'value': 'Unknown version'}
+    else:
+        results['version'] = {'status': 'FAIL', 'value': 'Java not found'}
+    
+    # Heap 설정 확인
+    heap_result = run_command("grep -rE '(-Xms|-Xmx)' /etc/systemd/system /etc/default 2>/dev/null | head -5")
+    if heap_result['success'] and heap_result['stdout']:
+        has_xms = '-Xms' in heap_result['stdout']
+        has_xmx = '-Xmx' in heap_result['stdout']
+        results['heap'] = {
+            'status': 'PASS' if (has_xms and has_xmx) else 'WARN',
+            'value': 'Configured' if (has_xms and has_xmx) else 'Not configured',
+            'details': heap_result['stdout'].split('\n')[0][:100]
+        }
+    else:
+        results['heap'] = {'status': 'SKIP', 'value': 'Not found'}
+    
+    return results
+
+
+def check_network() -> Dict[str, Any]:
+    """네트워크 설정 확인"""
+    results = {}
+    
+    # IP 주소 확인 (enp로 시작하는 인터페이스만, 도커 제외)
+    # 필수 IP: 192.168.1.10/24, 192.168.10.20/24
+    ip_result = run_command("ip -o -4 addr show | awk '{print $2, $4}'")
+    if ip_result['success']:
+        ips = ip_result['stdout'].split('\n')
+        # enp로 시작하는 인터페이스만 필터링 (도커 제외)
+        enp_interfaces = [ip for ip in ips if ip.startswith('enp')]
+        
+        # 필수 IP 주소 확인
+        required_ips = ['192.168.1.10/24', '192.168.10.20/24']
+        found_ips = []
+        missing_ips = []
+        
+        for required_ip in required_ips:
+            found = False
+            for interface in enp_interfaces:
+                if required_ip in interface:
+                    found = True
+                    found_ips.append(required_ip)
+                    break
+            if not found:
+                missing_ips.append(required_ip)
+        
+        # 두 개의 필수 IP가 모두 있어야 PASS
+        has_all_required = len(missing_ips) == 0
+        
+        results['ip_addresses'] = {
+            'status': 'PASS' if has_all_required else 'FAIL',
+            'count': len(enp_interfaces),
+            'addresses': enp_interfaces[:3],  # 최대 3개만 표시
+            'required': required_ips,
+            'found': found_ips,
+            'missing': missing_ips
+        }
+    else:
+        results['ip_addresses'] = {
+            'status': 'FAIL', 
+            'count': 0,
+            'required': ['192.168.1.10/24', '192.168.10.20/24'],
+            'found': [],
+            'missing': ['192.168.1.10/24', '192.168.10.20/24']
+        }
+    
+    # 활성 연결 (nmcli)
+    nmcli_result = run_command("nmcli -t con show --active 2>/dev/null")
+    if nmcli_result['returncode'] == 0:
+        connections = [line.split(':')[0] for line in nmcli_result['stdout'].split('\n') if line]
+        results['active_connections'] = {
+            'status': 'PASS' if len(connections) > 0 else 'FAIL',
+            'count': len(connections),
+            'names': connections[:3]
+        }
+    else:
+        results['active_connections'] = {'status': 'SKIP', 'value': 'nmcli not available'}
+    
+    return results
+
+
+def check_disk_space() -> Dict[str, Any]:
+    """디스크 공간 확인"""
+    results = {}
+    
+    # 루트 파티션
+    df_result = run_command("df -h / | tail -1")
+    if df_result['success']:
+        parts = df_result['stdout'].split()
+        if len(parts) >= 5:
+            usage_pct = int(parts[4].replace('%', ''))
+            results['root'] = {
+                'status': 'PASS' if usage_pct < 80 else 'WARN' if usage_pct < 90 else 'FAIL',
+                'size': parts[1],
+                'used': parts[2],
+                'avail': parts[3],
+                'usage': parts[4]
+            }
+    
+    # PostgreSQL 데이터 디렉토리
+    pg_result = run_command("df -h /var/lib/postgresql 2>/dev/null | tail -1")
+    if pg_result['success']:
+        parts = pg_result['stdout'].split()
+        if len(parts) >= 5:
+            usage_pct = int(parts[4].replace('%', ''))
+            results['postgresql'] = {
+                'status': 'PASS' if usage_pct < 80 else 'WARN',
+                'usage': parts[4],
+                'avail': parts[3]
+            }
+    else:
+        results['postgresql'] = {'status': 'SKIP', 'value': 'Not mounted separately'}
+    
+    return results
+
+
+def check_cron() -> Dict[str, Any]:
+    """Cron 작업 확인"""
+    results = {}
+    
+    # Crontab 확인
+    cron_result = run_command("crontab -l 2>/dev/null")
+    if cron_result['success']:
+        cron_lines = [line for line in cron_result['stdout'].split('\n') if line and not line.startswith('#')]
+        results['crontab'] = {
+            'status': 'PASS' if len(cron_lines) > 0 else 'WARN',
+            'count': len(cron_lines),
+            'jobs': cron_lines[:5]
+        }
+        
+        # 00:01 작업 확인
+        has_0001_job = any('1 0 * * *' in line or '01 00 * * *' in line for line in cron_lines)
+        results['daily_sync'] = {
+            'status': 'PASS' if has_0001_job else 'WARN',
+            'value': 'Found' if has_0001_job else 'Not found',
+            'expected': 'Daily 00:01 UTC job'
+        }
+    else:
+        results['crontab'] = {'status': 'SKIP', 'value': 'No crontab'}
+    
+    return results
+
+
+def check_system_status() -> Dict[str, Any]:
+    """전체 시스템 종합 점검"""
+    from utils.ui import (
+        print_section, print_pass, print_fail, print_warning,
+        print_info, print_key_value, print_table
+    )
+    
+    print_section(4, 4, "시스템 종합 점검")
+    
+    result = {
+        'status': 'UNKNOWN',
+        'os_settings': {},
+        'services': {},
+        'ports': {},
+        'java': {},
+        'network': {},
+        'disk': {},
+        'cron': {}
+    }
+    
+    # 1. OS 설정
+    print("")
+    print_info("OS 설정 확인 중...")
+    os_settings = check_os_settings()
+    result['os_settings'] = os_settings
+    
+    for key, value in os_settings.items():
+        status = value.get('status', 'UNKNOWN')
+        val = value.get('value', 'N/A')
+        if status == 'PASS':
+            print_pass(f"{key}: {val}")
+        elif status == 'WARN':
+            print_warning(f"{key}: {val} (권장: {value.get('expected', 'N/A')})")
+        elif status == 'FAIL':
+            print_fail(f"{key}: {val}")
+        else:
+            print_info(f"{key}: {val}")
+    
+    # 2. 서비스 상태
+    print("")
+    print_info("주요 서비스 상태 확인 중...")
+    services = check_services()
+    result['services'] = services
+    
+    for service, info in services.items():
+        status = info.get('status', 'UNKNOWN')
+        state = info.get('state', 'unknown')
+        if status == 'PASS':
+            print_pass(f"{service}: {state}")
+        elif status == 'FAIL':
+            print_fail(f"{service}: {state}")
+        else:
+            print_warning(f"{service}: {state}")
+    
+    # 3. 포트 리스닝
+    print("")
+    print_info("주요 포트 리스닝 확인 중...")
+    ports = check_ports()
+    result['ports'] = ports
+    
+    for port_name, info in ports.items():
+        if info.get('listening'):
+            print_pass(f"{port_name}: Listening")
+        else:
+            print_fail(f"{port_name}: Not listening")
+    
+    # 4. Java 설정
+    print("")
+    print_info("Java 설정 확인 중...")
+    java = check_java()
+    result['java'] = java
+    
+    for key, value in java.items():
+        status = value.get('status', 'UNKNOWN')
+        val = value.get('value', 'N/A')
+        if status == 'PASS':
+            print_pass(f"Java {key}: {val}")
+        elif status == 'WARN':
+            print_warning(f"Java {key}: {val}")
+        else:
+            print_info(f"Java {key}: {val}")
+    
+    # 5. 네트워크
+    print("")
+    print_info("네트워크 설정 확인 중...")
+    network = check_network()
+    result['network'] = network
+    
+    if 'ip_addresses' in network:
+        ip_info = network['ip_addresses']
+        if ip_info.get('status') == 'PASS':
+            print_pass(f"IP 주소: {ip_info.get('count')}개")
+            for addr in ip_info.get('addresses', []):
+                print(f"    {addr}")
+        else:
+            print_fail(f"IP 주소: {ip_info.get('count')}개 (필수 IP 누락)")
+            # 필수 IP 상태 표시
+            if 'required' in ip_info:
+                for req_ip in ip_info.get('required', []):
+                    if req_ip in ip_info.get('found', []):
+                        print_pass(f"  ✓ {req_ip}")
+                    else:
+                        print_fail(f"  ✗ {req_ip} (없음)")
+    
+    if 'active_connections' in network and network['active_connections'].get('status') != 'SKIP':
+        conn_info = network['active_connections']
+        if conn_info.get('status') == 'PASS':
+            print_pass(f"활성 연결: {conn_info.get('count')}개")
+    
+    # 6. 디스크 공간
+    print("")
+    print_info("디스크 공간 확인 중...")
+    disk = check_disk_space()
+    result['disk'] = disk
+    
+    if 'root' in disk:
+        root_info = disk['root']
+        status = root_info.get('status', 'UNKNOWN')
+        usage = root_info.get('usage', 'N/A')
+        avail = root_info.get('avail', 'N/A')
+        
+        if status == 'PASS':
+            print_pass(f"루트 파티션: {usage} 사용 (여유: {avail})")
+        elif status == 'WARN':
+            print_warning(f"루트 파티션: {usage} 사용 (여유: {avail})")
+        else:
+            print_fail(f"루트 파티션: {usage} 사용 (여유: {avail})")
+    
+    # 7. Cron 작업
+    print("")
+    print_info("Cron 작업 확인 중...")
+    cron = check_cron()
+    result['cron'] = cron
+    
+    if 'crontab' in cron:
+        cron_info = cron['crontab']
+        if cron_info.get('status') != 'SKIP':
+            count = cron_info.get('count', 0)
+            if count > 0:
+                print_pass(f"Cron 작업: {count}개")
+            else:
+                print_warning("Cron 작업: 없음")
+    
+    if 'daily_sync' in cron:
+        sync_info = cron['daily_sync']
+        if sync_info.get('status') == 'PASS':
+            print_pass(f"일일 동기화 작업: {sync_info.get('value')}")
+        else:
+            print_warning(f"일일 동기화 작업: {sync_info.get('value')}")
+    
+    # 전체 판정 및 통계
+    print("")
+    
+    # 모든 카테고리의 항목들을 수집
+    all_items = []
+    for category in [os_settings, services, ports, java, network, disk, cron]:
+        for item in category.values():
+            if isinstance(item, dict) and 'status' in item:
+                all_items.append(item.get('status'))
+    
+    # 통계 계산
+    pass_count = sum(1 for status in all_items if status == 'PASS')
+    fail_count = sum(1 for status in all_items if status == 'FAIL')
+    warn_count = sum(1 for status in all_items if status == 'WARN')
+    skip_count = sum(1 for status in all_items if status == 'SKIP')
+    
+    result['summary'] = {
+        'pass_count': pass_count,
+        'fail_count': fail_count,
+        'warn_count': warn_count,
+        'skip_count': skip_count,
+        'total_count': len(all_items)
+    }
+    
+    # 전체 상태 판정
+    if fail_count == 0:
+        result['status'] = 'PASS'
+        print_pass(f"시스템 종합 점검 결과: PASS (✓{pass_count} ⚠{warn_count} ◌{skip_count})")
+    else:
+        result['status'] = 'FAIL'
+        print_fail(f"시스템 종합 점검 결과: FAIL (✓{pass_count} ✗{fail_count} ⚠{warn_count} ◌{skip_count})")
+    
+    return result
+
