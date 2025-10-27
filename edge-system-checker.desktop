@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Edge System Checker
+Comment=Edge 시스템 점검 도구
+Exec=gnome-terminal --title="Edge System Checker" --working-directory=%k -- python3 checker.py
+Icon=utilities-system-monitor
+Terminal=true
+StartupNotify=true
+Categories=System;Monitor;
+Keywords=system;check;monitor;edge;
+Path=/home/koast-user/edge-system-checker
