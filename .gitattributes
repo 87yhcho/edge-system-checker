@@ -1,0 +1,6 @@
+# Git attributes for proper line ending handling
+*.desktop text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
