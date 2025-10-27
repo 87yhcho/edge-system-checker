@@ -59,7 +59,7 @@ def generate_camera_urls(
     return cameras
 
 
-def test_camera_connection(rtsp_url: str, timeout: int = 5) -> Dict[str, Any]:
+def test_camera_connection(rtsp_url: str, timeout: int = 10) -> Dict[str, Any]:
     """카메라 연결 테스트 (OpenCV)"""
     cap = None
     try:
@@ -339,8 +339,8 @@ def show_camera_stream(camera_info: Dict[str, Any], stream_type: str = "source",
     else:
         print_info(f"  URL: 127.0.0.1:{camera_info['mediamtx_port']}")
     
-    # 연결 테스트
-    test_result = test_camera_connection(url, timeout=5)
+    # 연결 테스트 (타임아웃: 10초)
+    test_result = test_camera_connection(url, timeout=10)
     
     if not test_result['success']:
         print_fail(f"{name} {stream_label} 연결 실패: {test_result['error']}")
@@ -359,8 +359,8 @@ def show_camera_stream(camera_info: Dict[str, Any], stream_type: str = "source",
     cap = None
     try:
         cap = cv2.VideoCapture(url)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
-        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
         
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window_name, 800, 600)

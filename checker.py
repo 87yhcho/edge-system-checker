@@ -340,14 +340,30 @@ def print_final_summary_table(results: dict):
     ]
     
     for item, status in summary_items:
-        if status == 'PASS':
-            status_str = f"{Colors.PASS}✓ PASS{Colors.RESET}"
-        elif status == 'FAIL':
-            status_str = f"{Colors.FAIL}✗ FAIL{Colors.RESET}"
-        elif status == 'SKIP':
-            status_str = f"{Colors.SKIP}⊘ SKIP{Colors.RESET}"
+        # 카메라는 상세 정보 추가
+        if item == "카메라" and 'cameras' in results:
+            cam = results['cameras']
+            status_only = cam.get('status', 'UNKNOWN')
+            detail_text = f" (PASS: {cam.get('pass_count', 0)}, FAIL: {cam.get('fail_count', 0)}, SKIP: {cam.get('skip_count', 0)})"
+            
+            if status_only == 'PASS':
+                status_str = f"{Colors.PASS}✓{Colors.RESET} {status_only}{detail_text}"
+            elif status_only == 'FAIL':
+                status_str = f"{Colors.FAIL}✗{Colors.RESET} {status_only}{detail_text}"
+            elif status_only == 'SKIP':
+                status_str = f"{Colors.SKIP}⊘{Colors.RESET} {status_only}{detail_text}"
+            else:
+                status_str = f"{Colors.WARNING}{status}{Colors.RESET}"
         else:
-            status_str = f"{Colors.WARNING}{status}{Colors.RESET}"
+            # 다른 항목들
+            if status == 'PASS':
+                status_str = f"{Colors.PASS}✓{Colors.RESET} {status}"
+            elif status == 'FAIL':
+                status_str = f"{Colors.FAIL}✗{Colors.RESET} {status}"
+            elif status == 'SKIP':
+                status_str = f"{Colors.SKIP}⊘{Colors.RESET} {status}"
+            else:
+                status_str = f"{Colors.WARNING}{status}{Colors.RESET}"
         
         # 한글 너비를 고려하여 정렬
         padded_item = pad_string(item, 20)
