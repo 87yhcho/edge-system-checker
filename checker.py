@@ -345,9 +345,6 @@ def print_final_summary_table(results: dict):
             # "FAIL (PASS: 0, FAIL: 1, SKIP: 0)" 형태에서 상태만 추출
             status_only = status.split(' ')[0] if ' ' in status else status
             
-            # 디버깅: 실제 값 확인
-            print(f"DEBUG: 카메라 상태='{status}', 파싱된 상태='{status_only}'")
-            
             if status_only == 'PASS':
                 status_str = f"{Colors.PASS}✓{Colors.RESET} {status}"
             elif status_only == 'FAIL':

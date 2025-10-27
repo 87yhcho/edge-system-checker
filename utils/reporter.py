@@ -366,14 +366,29 @@ def print_summary(results: Dict[str, Any]):
     
     print_info("전체 요약:")
     for key, value in summary.items():
-        if 'PASS' in str(value):
-            print_pass(f"{key}: {value}")
-        elif 'FAIL' in str(value):
-            print_fail(f"{key}: {value}")
-        elif 'SKIP' in str(value):
-            print_skip(f"{key}: {value}")
+        # 카메라는 특별 처리 (상세 정보가 포함된 문자열)
+        if key == "카메라":
+            # "FAIL (PASS: 0, FAIL: 1, SKIP: 0)" 형태에서 상태만 추출
+            status_only = str(value).split(' ')[0] if ' ' in str(value) else str(value)
+            
+            if status_only == 'PASS':
+                print_pass(f"{key}: {value}")
+            elif status_only == 'FAIL':
+                print_fail(f"{key}: {value}")
+            elif status_only == 'SKIP':
+                print_skip(f"{key}: {value}")
+            else:
+                print(f"  {key}: {value}")
         else:
-            print(f"  {key}: {value}")
+            # 다른 항목들
+            if 'PASS' in str(value):
+                print_pass(f"{key}: {value}")
+            elif 'FAIL' in str(value):
+                print_fail(f"{key}: {value}")
+            elif 'SKIP' in str(value):
+                print_skip(f"{key}: {value}")
+            else:
+                print(f"  {key}: {value}")
     
     print("")
 
