@@ -332,26 +332,25 @@ def print_final_summary_table(results: dict):
     print(f"{Colors.INFO}{'═' * 80}{Colors.RESET}")
     
     summary_items = [
-        ("UPS/NUT", results.get('ups', {}).get('status', 'UNKNOWN')),
-        ("카메라", results.get('cameras', {}).get('status', 'UNKNOWN')),
-        # ("PostgreSQL", results.get('postgresql', {}).get('status', 'UNKNOWN')),  # 비활성화
-        ("NAS", results.get('nas', {}).get('status', 'UNKNOWN')),
-        ("시스템", results.get('system', {}).get('status', 'UNKNOWN'))
+        ("UPS/NUT", results.get('summary', {}).get('UPS/NUT', 'UNKNOWN')),
+        ("카메라", results.get('summary', {}).get('카메라', 'UNKNOWN')),
+        # ("PostgreSQL", results.get('summary', {}).get('PostgreSQL', 'UNKNOWN')),  # 비활성화
+        ("NAS", results.get('summary', {}).get('NAS', 'UNKNOWN')),
+        ("시스템", results.get('summary', {}).get('시스템', 'UNKNOWN'))
     ]
     
     for item, status in summary_items:
-        # 카메라는 상세 정보 추가
-        if item == "카메라" and 'cameras' in results:
-            cam = results['cameras']
-            status_only = cam.get('status', 'UNKNOWN')
-            detail_text = f" (PASS: {cam.get('pass_count', 0)}, FAIL: {cam.get('fail_count', 0)}, SKIP: {cam.get('skip_count', 0)})"
+        # 카메라는 상세 정보가 포함된 문자열 파싱
+        if item == "카메라":
+            # "FAIL (PASS: 0, FAIL: 1, SKIP: 0)" 형태에서 상태만 추출
+            status_only = status.split(' ')[0] if ' ' in status else status
             
             if status_only == 'PASS':
-                status_str = f"{Colors.PASS}✓{Colors.RESET} {status_only}{detail_text}"
+                status_str = f"{Colors.PASS}✓{Colors.RESET} {status}"
             elif status_only == 'FAIL':
-                status_str = f"{Colors.FAIL}✗{Colors.RESET} {status_only}{detail_text}"
+                status_str = f"{Colors.FAIL}✗{Colors.RESET} {status}"
             elif status_only == 'SKIP':
-                status_str = f"{Colors.SKIP}⊘{Colors.RESET} {status_only}{detail_text}"
+                status_str = f"{Colors.SKIP}⊘{Colors.RESET} {status}"
             else:
                 status_str = f"{Colors.WARNING}{status}{Colors.RESET}"
         else:
