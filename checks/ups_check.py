@@ -152,38 +152,6 @@ def check_config_files() -> Dict[str, bool]:
     return results
 
 
-def check_nas_connection(nas_ip: str) -> Dict[str, Any]:
-    """journalctl로 NAS 접속 로그 확인"""
-    if not nas_ip:
-        return {
-            'checked': False,
-            'message': 'NAS IP not provided'
-        }
-    
-    # journalctl로 최근 24시간 nut-server 로그에서 NAS_IP 검색
-    result = run_command(['journalctl', '-u', 'nut-server', '--since', '-24h'])
-    
-    if not result['success']:
-        return {
-            'checked': True,
-            'found': False,
-            'message': f"Failed to check logs: {result['stderr']}"
-        }
-    
-    found = nas_ip in result['stdout']
-    
-    # NAS IP 포함된 라인 추출 (최대 5개)
-    lines = [line for line in result['stdout'].split('\n') if nas_ip in line]
-    sample_lines = lines[:5] if lines else []
-    
-    return {
-        'checked': True,
-        'found': found,
-        'message': f"NAS ({nas_ip}) connection {'found' if found else 'not found'} in logs (last 24h)",
-        'sample_logs': sample_lines
-    }
-
-
 def check_ups_status(ups_name: str = 'ups', nas_ip: str = None) -> Dict[str, Any]:
     """전체 UPS 점검 실행"""
     from utils.ui import (
@@ -198,8 +166,7 @@ def check_ups_status(ups_name: str = 'ups', nas_ip: str = None) -> Dict[str, Any
         'services': {},
         'port': {},
         'ups_data': {},
-        'config_files': {},
-        'nas_connection': {}
+        'config_files': {}
     }
     
     # 1. NUT 서비스 상태 확인
@@ -272,21 +239,7 @@ def check_ups_status(ups_name: str = 'ups', nas_ip: str = None) -> Dict[str, Any
         missing = [f for f, exists in config_files.items() if not exists]
         print_warning(f"일부 설정 파일 누락: {', '.join(missing)}")
     
-    # 5. NAS 연결 확인
-    if nas_ip:
-        print("")
-        print_info(f"NAS ({nas_ip}) 연결 로그 확인 중...")
-        nas_conn = check_nas_connection(nas_ip)
-        result['nas_connection'] = nas_conn
-        
-        if nas_conn.get('found'):
-            print_pass(nas_conn['message'])
-            if nas_conn.get('sample_logs'):
-                print("  최근 로그 샘플:")
-                for log in nas_conn['sample_logs']:
-                    print(f"    {log[:100]}...")  # 첫 100자만
-        else:
-            print_warning(nas_conn['message'])
+    # NAS 연결 확인은 NAS 점검 항목에서 수행되므로 여기서는 제외
     
     # 전체 상태 판정
     print("")
