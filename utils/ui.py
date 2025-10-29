@@ -96,17 +96,17 @@ def print_key_value(key: str, value: str, status: str = None):
 def ask_continue(prompt: str = "계속하시겠습니까?") -> str:
     """
     사용자에게 계속 진행 여부 확인
-    Returns: 'continue', 'skip', 'quit'
+    Returns: 'continue', 'retry', 'quit'
     """
     print(f"\n{prompt}")
-    print(f"  {Colors.INFO}[Enter] 계속  [s] 건너뛰기  [q] 종료{Colors.RESET}")
+    print(f"  {Colors.INFO}[Enter] 계속  [r] 다시 점검  [q] 종료{Colors.RESET}")
     
     try:
         response = input("> ").strip().lower()
         if response == '':
             return 'continue'
-        elif response == 's':
-            return 'skip'
+        elif response == 'r':
+            return 'retry'
         elif response == 'q':
             return 'quit'
         else:

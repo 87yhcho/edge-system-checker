@@ -137,60 +137,27 @@ def main():
     print("")
     
     # ========== 1. UPS/NUT 점검 ==========
-    try:
-        ups_result = check_ups_status(
-            ups_name=config['nut']['ups_name'],
-            nas_ip=config['nas']['ip']
-        )
-        results['ups'] = ups_result
-        
-        # 사용자 컨펌
-        user_action = ask_continue("UPS 점검 완료. 다음 단계로 진행하시겠습니까?")
-        if user_action == 'quit':
-            print_warning("사용자가 점검을 중단했습니다.")
-            results['summary']['status'] = 'QUIT'
-            save_and_exit(results)
-            return
-        elif user_action == 'skip':
-            print_warning("다음 단계를 건너뜁니다.")
-    
-    except KeyboardInterrupt:
-        print("")
-        print_warning("사용자가 점검을 중단했습니다.")
-        results['summary']['status'] = 'INTERRUPTED'
-        save_and_exit(results)
-        return
-    except Exception as e:
-        print_fail(f"UPS 점검 중 오류 발생: {str(e)}")
-        results['ups'] = {'status': 'ERROR', 'error': str(e)}
-        
-        user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
-        if user_action == 'quit':
-            save_and_exit(results)
-            return
-    
-    # ========== 2. 카메라 점검 ==========
-    if camera_count > 0:
+    while True:
         try:
-            camera_result = check_cameras(camera_count, config['camera'], auto_mode=auto_mode)
-            results['cameras'] = camera_result
-            
-            if camera_result.get('status') == 'QUIT':
-                print_warning("사용자가 카메라 점검을 중단했습니다.")
-                results['summary']['status'] = 'QUIT'
-                save_and_exit(results)
-                return
+            ups_result = check_ups_status(
+                ups_name=config['nut']['ups_name'],
+                nas_ip=config['nas']['ip']
+            )
+            results['ups'] = ups_result
             
             # 사용자 컨펌
-            user_action = ask_continue("카메라 점검 완료. 다음 단계로 진행하시겠습니까?")
+            user_action = ask_continue("UPS 점검 완료. 다음 단계로 진행하시겠습니까?")
             if user_action == 'quit':
                 print_warning("사용자가 점검을 중단했습니다.")
                 results['summary']['status'] = 'QUIT'
                 save_and_exit(results)
                 return
-            elif user_action == 'skip':
-                print_warning("다음 단계를 건너뜁니다.")
-        
+            elif user_action == 'retry':
+                print_info("UPS 점검을 다시 수행합니다...")
+                continue  # 루프 계속 (재시도)
+            else:
+                break  # 루프 탈출 (계속 진행)
+    
         except KeyboardInterrupt:
             print("")
             print_warning("사용자가 점검을 중단했습니다.")
@@ -198,13 +165,64 @@ def main():
             save_and_exit(results)
             return
         except Exception as e:
-            print_fail(f"카메라 점검 중 오류 발생: {str(e)}")
-            results['cameras'] = {'status': 'ERROR', 'error': str(e)}
+            print_fail(f"UPS 점검 중 오류 발생: {str(e)}")
+            results['ups'] = {'status': 'ERROR', 'error': str(e)}
             
             user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
             if user_action == 'quit':
                 save_and_exit(results)
                 return
+            elif user_action == 'retry':
+                print_info("UPS 점검을 다시 수행합니다...")
+                continue  # 루프 계속 (재시도)
+            else:
+                break  # 루프 탈출 (계속 진행)
+    
+    # ========== 2. 카메라 점검 ==========
+    if camera_count > 0:
+        while True:
+            try:
+                camera_result = check_cameras(camera_count, config['camera'], auto_mode=auto_mode)
+                results['cameras'] = camera_result
+                
+                if camera_result.get('status') == 'QUIT':
+                    print_warning("사용자가 카메라 점검을 중단했습니다.")
+                    results['summary']['status'] = 'QUIT'
+                    save_and_exit(results)
+                    return
+                
+                # 사용자 컨펌
+                user_action = ask_continue("카메라 점검 완료. 다음 단계로 진행하시겠습니까?")
+                if user_action == 'quit':
+                    print_warning("사용자가 점검을 중단했습니다.")
+                    results['summary']['status'] = 'QUIT'
+                    save_and_exit(results)
+                    return
+                elif user_action == 'retry':
+                    print_info("카메라 점검을 다시 수행합니다...")
+                    continue  # 루프 계속 (재시도)
+                else:
+                    break  # 루프 탈출 (계속 진행)
+        
+            except KeyboardInterrupt:
+                print("")
+                print_warning("사용자가 점검을 중단했습니다.")
+                results['summary']['status'] = 'INTERRUPTED'
+                save_and_exit(results)
+                return
+            except Exception as e:
+                print_fail(f"카메라 점검 중 오류 발생: {str(e)}")
+                results['cameras'] = {'status': 'ERROR', 'error': str(e)}
+                
+                user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
+                if user_action == 'quit':
+                    save_and_exit(results)
+                    return
+                elif user_action == 'retry':
+                    print_info("카메라 점검을 다시 수행합니다...")
+                    continue  # 루프 계속 (재시도)
+                else:
+                    break  # 루프 탈출 (계속 진행)
     else:
         print_warning("카메라 점검을 건너뜁니다 (카메라 개수: 0)")
         results['cameras'] = {'status': 'SKIP', 'total': 0}
@@ -240,34 +258,43 @@ def main():
     #         return
     
     # ========== 3. NAS 점검 ==========
-    try:
-        nas_result = check_nas_status(config['nas'])
-        results['nas'] = nas_result
+    while True:
+        try:
+            nas_result = check_nas_status(config['nas'])
+            results['nas'] = nas_result
+            
+            # 사용자 컨펌
+            user_action = ask_continue("NAS 점검 완료. 다음 단계로 진행하시겠습니까?")
+            if user_action == 'quit':
+                print_warning("사용자가 점검을 중단했습니다.")
+                results['summary']['status'] = 'QUIT'
+                save_and_exit(results)
+                return
+            elif user_action == 'retry':
+                print_info("NAS 점검을 다시 수행합니다...")
+                continue  # 루프 계속 (재시도)
+            else:
+                break  # 루프 탈출 (계속 진행)
         
-        # 사용자 컨펌
-        user_action = ask_continue("NAS 점검 완료. 다음 단계로 진행하시겠습니까?")
-        if user_action == 'quit':
+        except KeyboardInterrupt:
+            print("")
             print_warning("사용자가 점검을 중단했습니다.")
-            results['summary']['status'] = 'QUIT'
+            results['summary']['status'] = 'INTERRUPTED'
             save_and_exit(results)
             return
-        elif user_action == 'skip':
-            print_warning("다음 단계를 건너뜁니다.")
-    
-    except KeyboardInterrupt:
-        print("")
-        print_warning("사용자가 점검을 중단했습니다.")
-        results['summary']['status'] = 'INTERRUPTED'
-        save_and_exit(results)
-        return
-    except Exception as e:
-        print_fail(f"NAS 점검 중 오류 발생: {str(e)}")
-        results['nas'] = {'status': 'ERROR', 'error': str(e)}
-        
-        user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
-        if user_action == 'quit':
-            save_and_exit(results)
-            return
+        except Exception as e:
+            print_fail(f"NAS 점검 중 오류 발생: {str(e)}")
+            results['nas'] = {'status': 'ERROR', 'error': str(e)}
+            
+            user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
+            if user_action == 'quit':
+                save_and_exit(results)
+                return
+            elif user_action == 'retry':
+                print_info("NAS 점검을 다시 수행합니다...")
+                continue  # 루프 계속 (재시도)
+            else:
+                break  # 루프 탈출 (계속 진행)
     
     # ========== 4. 시스템 종합 점검 ==========
     try:
