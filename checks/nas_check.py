@@ -481,17 +481,37 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
         print("")
         print_info("RAID 상태 확인 중...")
         if storage_info.get('raid_status') and storage_info['raid_status'] != 'N/A (SW RAID 없음)':
-            if any('RAID 디스크 실패' in issue for issue in storage_info.get('critical_issues', [])):
-                print_fail("⚠️  RAID 디스크 실패 감지!")
-            else:
-                print_pass("RAID 상태 정상")
-            
             # RAID 정보 요약 출력
             if storage_info.get('raid_info'):
-                print("")
                 # 주 데이터 볼륨(md2) 찾기
                 data_volumes = [k for k in storage_info['raid_info'].keys() if k == 'md2']
                 system_volumes = [k for k in storage_info['raid_info'].keys() if k in ['md0', 'md1']]
+                
+                # 데이터 볼륨의 RAID 레벨 추출
+                raid_level_display = None
+                if data_volumes:
+                    raid_level = storage_info['raid_info'][data_volumes[0]]['level']
+                    level_map = {
+                        'raid0': 'RAID 0',
+                        'raid1': 'RAID 1',
+                        'raid5': 'RAID 5',
+                        'raid6': 'RAID 6',
+                        'raid10': 'RAID 10'
+                    }
+                    raid_level_display = level_map.get(raid_level, raid_level.upper())
+                
+                # RAID 디스크 실패 확인
+                if any('RAID 디스크 실패' in issue for issue in storage_info.get('critical_issues', [])):
+                    if raid_level_display:
+                        print_fail(f"⚠️  {raid_level_display} 디스크 실패 감지!")
+                    else:
+                        print_fail("⚠️  RAID 디스크 실패 감지!")
+                else:
+                    if raid_level_display:
+                        print_pass(f"{raid_level_display} 구성으로 정상")
+                    else:
+                        print_pass("RAID 상태 정상")
+                print("")
                 
                 # 데이터 볼륨 먼저 표시
                 for device in sorted(data_volumes + system_volumes):
@@ -537,19 +557,13 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
         else:
             print_warning("RAID 정보가 없습니다 (소프트웨어 RAID 미사용)")
         
-        # 4. UPS 상태 확인
+        # 4. UPS 상태 확인 (정보가 있을 때만 출력)
         print("")
         print_info("NAS UPS 상태 확인 중...")
         ups_info = checker.check_ups()
         result['ups'] = ups_info
         
-        # NUT 클라이언트 서비스 상태 먼저 확인
-        if ups_info.get('nut_client_status'):
-            if ups_info['nut_client_status'] == 'active':
-                print_pass("NUT 클라이언트: 활성화됨")
-            else:
-                print_info(f"NUT 클라이언트: {ups_info['nut_client_status']}")
-        
+        # UPS 정보가 있을 때만 출력
         if ups_info['status'] == 'AVAILABLE':
             print_pass("NAS 로컬 UPS 정보 확인됨 (synoups)")
             if ups_info['details'].get('synoups'):
@@ -566,18 +580,16 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
                 for line in output.split('\n')[:10]:
                     if line.strip() and ':' in line:
                         print(f"    {line}")
-        else:
-            # NOT_AVAILABLE: 원격 NUT 서버를 사용하는 경우
-            if ups_info.get('nut_client_status') == 'active':
-                print_pass("원격 NUT 서버에 연결 중")
-                if ups_info['details'].get('nut_client_config'):
-                    config = ups_info['details']['nut_client_config']
-                    # 서버 IP 추출
-                    for line in config.split('\n'):
-                        if 'server' in line.lower() or '[' in line:
-                            print(f"  {line.strip()}")
-            else:
-                print_info("로컬 UPS 정보 없음 (NUT 클라이언트 미설정 또는 비활성화)")
+        elif ups_info.get('nut_client_status') == 'active':
+            # NUT 클라이언트가 활성화되어 있는 경우 (원격 서버 연결 중)
+            print_pass("원격 NUT 서버에 연결 중")
+            if ups_info['details'].get('nut_client_config'):
+                config = ups_info['details']['nut_client_config']
+                # 서버 IP 추출
+                for line in config.split('\n'):
+                    if 'server' in line.lower() or '[' in line:
+                        print(f"  {line.strip()}")
+        # UPS 정보가 없고 NUT 클라이언트도 없는 경우 출력하지 않음
         
         # 5. 오류/경고 집계
         result['errors'] = checker.errors
