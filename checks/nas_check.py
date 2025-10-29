@@ -284,83 +284,6 @@ class NASChecker:
         
         return result
     
-    def check_ups(self) -> Dict[str, Any]:
-        """
-        UPS 상태 체크 (시놀로지 우선, 경로 fallback)
-        
-        참고: NAS가 원격 NUT 서버(엣지 PC 등)를 사용하는 경우,
-        NAS 로컬에서 UPS 정보를 조회할 수 없는 것이 정상입니다.
-        이 경우 NOT_AVAILABLE은 오류가 아닙니다.
-        """
-        result = {
-            'status': 'UNKNOWN',
-            'details': {},
-            'issues': [],
-            'nut_client_status': None  # NUT 클라이언트 연결 상태
-        }
-        
-        # 먼저 NUT 클라이언트 서비스 상태 확인
-        nut_client_service = self.exec_command('systemctl is-active pkgctl-NutClient 2>/dev/null || systemctl is-active nut-client 2>/dev/null', timeout=5)
-        nut_client_config = self.exec_command('cat /usr/syno/etc/ups/ups.conf 2>/dev/null || cat /etc/nut/ups.conf 2>/dev/null', timeout=5)
-        
-        if nut_client_service['success'] and nut_client_service['stdout'].strip() in ['active', 'inactive']:
-            result['nut_client_status'] = nut_client_service['stdout'].strip()
-            if nut_client_config['success'] and nut_client_config['stdout'].strip():
-                result['details']['nut_client_config'] = nut_client_config['stdout'].strip()
-        
-        # 1순위: 시놀로지 UPS 명령 (경로 fallback)
-        # PATH 검색 → 절대경로 fallback
-        synoups_cmd = 'synoups --status 2>/dev/null || /usr/syno/sbin/synoups --status 2>/dev/null'
-        synoups = self.exec_command(synoups_cmd, timeout=10)
-        
-        if synoups['success'] and synoups['stdout'].strip():
-            result['status'] = 'AVAILABLE'
-            result['details']['synoups'] = synoups['stdout'].strip()
-            
-            # UPS 배터리 체크 (다국어 대응 - 정규식 사용)
-            # "Battery Charge: 85%", "배터리 충전: 85%" 등 모두 대응
-            battery_pattern = re.compile(r'(\d{1,3})\s*%')
-            
-            for line in synoups['stdout'].splitlines():
-                # 배터리 관련 라인 찾기 (키워드 다국어 대응)
-                if any(keyword in line.lower() for keyword in ['battery', 'charge', '배터리', '충전']):
-                    battery_match = battery_pattern.search(line)
-                    if battery_match:
-                        try:
-                            charge = int(battery_match.group(1))
-                            # 100 이하만 배터리로 판단 (잘못된 파싱 방지)
-                            if charge <= 100:
-                                if charge < 50:
-                                    warning = f"UPS 배터리 충전량 낮음: {charge}%"
-                                    result['issues'].append(warning)
-                                    self.warnings.append(warning)
-                                break  # 첫 배터리 정보만 사용
-                        except:
-                            pass
-        else:
-            # 2순위: NUT upsc 명령
-            upsc = self.exec_command('upsc ups@localhost 2>/dev/null', timeout=10)
-            if upsc['success'] and upsc['stdout'].strip() and len(upsc['stdout']) > 20:
-                result['status'] = 'NUT_AVAILABLE'
-                result['details']['nut'] = upsc['stdout'].strip()
-                
-                # NUT에서도 배터리 체크
-                battery_pattern = re.compile(r'battery\.charge:\s*(\d{1,3})')
-                battery_match = battery_pattern.search(upsc['stdout'])
-                if battery_match:
-                    try:
-                        charge = int(battery_match.group(1))
-                        if charge < 50:
-                            warning = f"UPS 배터리 충전량 낮음: {charge}%"
-                            result['issues'].append(warning)
-                            self.warnings.append(warning)
-                    except:
-                        pass
-            else:
-                result['status'] = 'NOT_AVAILABLE'
-                result['details']['message'] = 'UPS 정보 없음 (원격 NUT 서버 사용 중일 수 있음)'
-        
-        return result
 
 
 def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
@@ -414,7 +337,6 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
         'connection': 'Not tested',
         'system': {},
         'storage': {},
-        'ups': {},
         'errors': [],
         'warnings': []
     }
@@ -557,45 +479,11 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
         else:
             print_warning("RAID 정보가 없습니다 (소프트웨어 RAID 미사용)")
         
-        # 4. UPS 상태 확인 (정보가 있을 때만 출력)
-        print("")
-        print_info("NAS UPS 상태 확인 중...")
-        ups_info = checker.check_ups()
-        result['ups'] = ups_info
-        
-        # UPS 정보가 있을 때만 출력
-        if ups_info['status'] == 'AVAILABLE':
-            print_pass("NAS 로컬 UPS 정보 확인됨 (synoups)")
-            if ups_info['details'].get('synoups'):
-                output = ups_info['details']['synoups']
-                print("")
-                for line in output.split('\n')[:10]:
-                    if line.strip():
-                        print(f"    {line}")
-        elif ups_info['status'] == 'NUT_AVAILABLE':
-            print_pass("NAS 로컬 UPS 정보 확인됨 (NUT)")
-            if ups_info['details'].get('nut'):
-                output = ups_info['details']['nut']
-                print("")
-                for line in output.split('\n')[:10]:
-                    if line.strip() and ':' in line:
-                        print(f"    {line}")
-        elif ups_info.get('nut_client_status') == 'active':
-            # NUT 클라이언트가 활성화되어 있는 경우 (원격 서버 연결 중)
-            print_pass("원격 NUT 서버에 연결 중")
-            if ups_info['details'].get('nut_client_config'):
-                config = ups_info['details']['nut_client_config']
-                # 서버 IP 추출
-                for line in config.split('\n'):
-                    if 'server' in line.lower() or '[' in line:
-                        print(f"  {line.strip()}")
-        # UPS 정보가 없고 NUT 클라이언트도 없는 경우 출력하지 않음
-        
-        # 5. 오류/경고 집계
+        # 4. 오류/경고 집계
         result['errors'] = checker.errors
         result['warnings'] = checker.warnings
         
-        # 6. 최종 판정
+        # 5. 최종 판정
         print("")
         if checker.errors:
             result['status'] = 'FAIL'
