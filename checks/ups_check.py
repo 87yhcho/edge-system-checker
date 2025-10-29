@@ -295,13 +295,11 @@ def check_ups_status(ups_name: str = 'ups', nas_ip: str = None) -> Dict[str, Any
     services_ok = services['all_active']
     port_ok = port['listening']
     ups_ok = ups_data['success']
-    nas_ok = True  # NAS IP가 없으면 기본적으로 OK
     
-    # NAS 연결 확인 결과도 판정에 포함
-    if nas_ip:
-        nas_ok = nas_conn.get('found', False)
+    # NAS 연결 확인은 선택적 체크 (FAIL 판정에서 제외)
+    # NAS가 원격 NUT 클라이언트로 연결된 경우 로그에 항상 기록되는 것은 아님
     
-    if services_ok and port_ok and ups_ok and nas_ok:
+    if services_ok and port_ok and ups_ok:
         result['status'] = 'PASS'
         print_pass("UPS/NUT 점검 결과: PASS")
     else:
@@ -316,8 +314,6 @@ def check_ups_status(ups_name: str = 'ups', nas_ip: str = None) -> Dict[str, Any
             failures.append("포트 미리스닝")
         if not ups_ok:
             failures.append("UPS 데이터 조회 실패")
-        if nas_ip and not nas_ok:
-            failures.append("NAS 연결 실패")
         
         print(f"  실패 원인: {', '.join(failures)}")
     
