@@ -344,9 +344,13 @@ def generate_report(results: Dict[str, Any]) -> str:
 
 def save_report(results: Dict[str, Any], output_dir: str = ".") -> str:
     """리포트를 파일로 저장"""
+    # reports 폴더 생성
+    reports_dir = os.path.join(output_dir, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"report_{timestamp}.txt"
-    filepath = os.path.join(output_dir, filename)
+    filepath = os.path.join(reports_dir, filename)
     
     report_content = generate_report(results)
     
