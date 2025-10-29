@@ -463,12 +463,34 @@ def check_system_status() -> Dict[str, Any]:
     # 전체 판정 및 통계
     print("")
     
-    # 모든 카테고리의 항목들을 수집
+    # 모든 카테고리의 항목들을 수집 + SKIP 항목 추적
     all_items = []
-    for category in [os_settings, services, ports, java, network, disk, cron]:
-        for item in category.values():
+    skip_items = []
+    named_categories = [
+        ('OS 설정', os_settings),
+        ('서비스', services),
+        ('포트', ports),
+        ('Java', java),
+        ('네트워크', network),
+        ('디스크', disk),
+        ('Cron', cron),
+    ]
+    for category_name, category in named_categories:
+        for key, item in category.items():
             if isinstance(item, dict) and 'status' in item:
-                all_items.append(item.get('status'))
+                status_val = item.get('status')
+                all_items.append(status_val)
+                if status_val == 'SKIP':
+                    # 항목 라벨 구성
+                    label = key
+                    # 서비스/포트 등은 사람이 보기 좋게 라벨링
+                    if category_name == '서비스':
+                        label = item.get('service', key)
+                    elif category_name == '포트':
+                        label = key
+                    elif category_name == '네트워크' and key == 'active_connections':
+                        label = '활성 연결'
+                    skip_items.append(f"{category_name}: {label}")
     
     # 통계 계산
     pass_count = sum(1 for status in all_items if status == 'PASS')
@@ -481,6 +503,7 @@ def check_system_status() -> Dict[str, Any]:
         'fail_count': fail_count,
         'warn_count': warn_count,
         'skip_count': skip_count,
+        'skip_items': skip_items,
         'total_count': len(all_items)
     }
     
@@ -491,6 +514,10 @@ def check_system_status() -> Dict[str, Any]:
     else:
         result['status'] = 'FAIL'
         print_fail(f"시스템 종합 점검 결과: FAIL (✓{pass_count} ✗{fail_count} ⚠{warn_count} ◌{skip_count})")
+
+    # SKIP 항목 목록 출력
+    if skip_count > 0 and skip_items:
+        print_info("SKIP 항목: " + ", ".join(skip_items[:5]) + (" ..." if len(skip_items) > 5 else ""))
     
     return result
 

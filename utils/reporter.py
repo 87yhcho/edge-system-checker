@@ -328,6 +328,14 @@ def generate_report(results: Dict[str, Any]) -> str:
             lines.append(f"    - FAIL: {summary.get('fail_count', 0)}개")
             lines.append(f"    - WARN: {summary.get('warn_count', 0)}개")
             lines.append(f"    - SKIP: {summary.get('skip_count', 0)}개")
+            # SKIP 항목 상세
+            skip_items = summary.get('skip_items', [])
+            if skip_items:
+                lines.append("      · SKIP 항목: ")
+                for name in skip_items[:10]:
+                    lines.append(f"        - {name}")
+                if len(skip_items) > 10:
+                    lines.append(f"        ... 외 {len(skip_items) - 10}개")
             lines.append("")
         
         if 'error' in system:
