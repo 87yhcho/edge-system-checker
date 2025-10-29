@@ -177,6 +177,11 @@ class NASChecker:
                 device_name = device_match.group(1)
                 raid_level = device_match.group(2)  # raid1, raid5, raid6 등
                 
+                # 디스크 슬롯 번호 추출 (예: sata1p3[0] sata3p3[2] sata2p3[1])
+                # sata1, sata2, sata3, sata4 등의 번호를 추출
+                disk_slots = re.findall(r'(sata\d+)', line)
+                disk_numbers = sorted(set([d.replace('sata', '') for d in disk_slots]))
+                
                 # 블록 수 추출 (총 용량 계산용)
                 blocks_match = re.search(r'(\d+)\s+blocks', line)
                 blocks = int(blocks_match.group(1)) if blocks_match else 0
@@ -202,7 +207,8 @@ class NASChecker:
                         'capacity_gb': capacity_gb,
                         'disk_count': active_disks,
                         'status': raid_state,
-                        'active': active_count
+                        'active': active_count,
+                        'disk_numbers': disk_numbers  # 디스크 슬롯 번호 (1,2,3 등)
                     }
                     
                     # 실제 장애 판단: 사용 중인 디스크 수와 활성(U) 개수가 다르면 장애
@@ -473,16 +479,22 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
             # RAID 정보 요약 출력
             if storage_info.get('raid_info'):
                 print("")
-                print("  RAID 구성 정보:")
-                for device, info in storage_info['raid_info'].items():
+                # 주 데이터 볼륨(md2) 찾기
+                data_volumes = [k for k in storage_info['raid_info'].keys() if k == 'md2']
+                system_volumes = [k for k in storage_info['raid_info'].keys() if k in ['md0', 'md1']]
+                
+                # 데이터 볼륨 먼저 표시
+                for device in sorted(data_volumes + system_volumes):
+                    info = storage_info['raid_info'][device]
                     raid_level = info['level']
                     disk_count = info['disk_count']
                     capacity = info['capacity_gb']
+                    disk_numbers = info.get('disk_numbers', [])
                     
                     # RAID 레벨 한글 표시
                     level_map = {
-                        'raid0': 'RAID 0 (스트라이핑)',
-                        'raid1': 'RAID 1 (미러링)',
+                        'raid0': 'RAID 0',
+                        'raid1': 'RAID 1',
                         'raid5': 'RAID 5',
                         'raid6': 'RAID 6',
                         'raid10': 'RAID 10'
@@ -494,17 +506,24 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
                     else:
                         capacity_str = f"{capacity:.1f}GB"
                     
-                    print(f"    {device}: {level_name}")
-                    print(f"      - 디스크 개수: {disk_count}개")
-                    print(f"      - 총 용량: {capacity_str}")
-                    print(f"      - 상태: {info['status']}")
-            
-            print("")
-            print("  상세 RAID 상태:")
-            lines = storage_info['raid_status'].split('\n')[:15]
-            for line in lines:
-                if line.strip():
-                    print(f"    {line}")
+                    # 디스크 슬롯 번호 표시
+                    if disk_numbers:
+                        disk_info = f"슬롯 {', '.join(disk_numbers)}번에 {disk_count}개 디스크 연결됨"
+                    else:
+                        disk_info = f"{disk_count}개 디스크 사용 중"
+                    
+                    # 볼륨 타입 판단
+                    if device == 'md2':
+                        vol_type = "데이터 볼륨"
+                        print(f"  📀 {vol_type}: {level_name}로 구성됨")
+                    else:
+                        vol_type = "시스템 볼륨" if device == 'md0' else "SWAP 볼륨"
+                        print(f"  💾 {vol_type}: {level_name}로 구성됨")
+                    
+                    print(f"     - {disk_info}")
+                    print(f"     - 총 용량: {capacity_str}")
+                    print(f"     - 상태: {info['status']} (정상)")
+                    print("")
         else:
             print_warning("RAID 정보가 없습니다 (소프트웨어 RAID 미사용)")
         
