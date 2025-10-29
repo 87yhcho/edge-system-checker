@@ -181,7 +181,7 @@ def check_network() -> Dict[str, Any]:
     results = {}
     
     # IP 주소 확인 (enp로 시작하는 인터페이스만, 도커 제외)
-    # 필수 IP: 192.168.1.10/24, 192.168.10.20/24
+    # 필수 IP: 192.168.10.20/24는 필수, 192.168.1.10/24 또는 192.168.1.100/24 중 하나 이상
     ip_result = run_command("ip -o -4 addr show | awk '{print $2, $4}'")
     if ip_result['success']:
         ips = ip_result['stdout'].split('\n')
@@ -189,28 +189,38 @@ def check_network() -> Dict[str, Any]:
         enp_interfaces = [ip for ip in ips if ip.startswith('enp')]
         
         # 필수 IP 주소 확인
-        required_ips = ['192.168.1.10/24', '192.168.10.20/24']
+        required_ip_main = '192.168.10.20/24'  # 반드시 있어야 함
+        optional_ips = ['192.168.1.10/24', '192.168.1.100/24']  # 둘 중 하나 이상
+        
         found_ips = []
+        has_main_ip = False
+        has_optional_ip = False
+        
+        for interface in enp_interfaces:
+            if required_ip_main in interface:
+                has_main_ip = True
+                found_ips.append(required_ip_main)
+            for optional_ip in optional_ips:
+                if optional_ip in interface:
+                    has_optional_ip = True
+                    if optional_ip not in found_ips:
+                        found_ips.append(optional_ip)
+        
+        # 메인 IP와 선택적 IP 중 하나 이상 있어야 PASS
+        has_all_required = has_main_ip and has_optional_ip
+        
+        required_ips_list = [required_ip_main] + optional_ips
         missing_ips = []
-        
-        for required_ip in required_ips:
-            found = False
-            for interface in enp_interfaces:
-                if required_ip in interface:
-                    found = True
-                    found_ips.append(required_ip)
-                    break
-            if not found:
-                missing_ips.append(required_ip)
-        
-        # 두 개의 필수 IP가 모두 있어야 PASS
-        has_all_required = len(missing_ips) == 0
+        if not has_main_ip:
+            missing_ips.append(required_ip_main)
+        if not has_optional_ip:
+            missing_ips.extend(optional_ips)
         
         results['ip_addresses'] = {
             'status': 'PASS' if has_all_required else 'FAIL',
             'count': len(enp_interfaces),
             'addresses': enp_interfaces[:3],  # 최대 3개만 표시
-            'required': required_ips,
+            'required': required_ips_list,
             'found': found_ips,
             'missing': missing_ips
         }
@@ -218,9 +228,9 @@ def check_network() -> Dict[str, Any]:
         results['ip_addresses'] = {
             'status': 'FAIL', 
             'count': 0,
-            'required': ['192.168.1.10/24', '192.168.10.20/24'],
+            'required': ['192.168.10.20/24', '192.168.1.10/24', '192.168.1.100/24'],
             'found': [],
-            'missing': ['192.168.1.10/24', '192.168.10.20/24']
+            'missing': ['192.168.10.20/24', '192.168.1.10/24', '192.168.1.100/24']
         }
     
     # 활성 연결 (nmcli)

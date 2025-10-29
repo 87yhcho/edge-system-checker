@@ -152,6 +152,7 @@ class NASChecker:
         """스토리지 정보 체크"""
         result = {
             'raid_status': None,
+            'raid_info': {},  # RAID 정보 요약 (디스크 개수, 용량 등)
             'disk_usage': None,
             'critical_issues': []
         }
@@ -169,11 +170,18 @@ class NASChecker:
             # 각 md 디바이스별로 검사
             for line in raid['stdout'].splitlines():
                 # RAID 상태 라인: "md0 : active raid1 ... blocks [4/3] [UUU_]"
-                device_match = re.search(r'(md\d+)\s*:\s*active', line)
+                device_match = re.search(r'(md\d+)\s*:\s*active\s+(raid\d+)', line)
                 if not device_match:
                     continue
                 
                 device_name = device_match.group(1)
+                raid_level = device_match.group(2)  # raid1, raid5, raid6 등
+                
+                # 블록 수 추출 (총 용량 계산용)
+                blocks_match = re.search(r'(\d+)\s+blocks', line)
+                blocks = int(blocks_match.group(1)) if blocks_match else 0
+                # 블록은 보통 1KB이므로 GB로 변환
+                capacity_gb = blocks / 1024 / 1024 if blocks > 0 else 0
                 
                 # [x/y] 패턴: 전체 슬롯 수 / 실제 사용 디스크 수
                 slot_match = re.search(r'\[(\d+)/(\d+)\]', line)
@@ -187,6 +195,15 @@ class NASChecker:
                     
                     active_count = raid_state.count('U')
                     failed_count = raid_state.count('_')
+                    
+                    # RAID 정보 저장
+                    result['raid_info'][device_name] = {
+                        'level': raid_level,
+                        'capacity_gb': capacity_gb,
+                        'disk_count': active_disks,
+                        'status': raid_state,
+                        'active': active_count
+                    }
                     
                     # 실제 장애 판단: 사용 중인 디스크 수와 활성(U) 개수가 다르면 장애
                     if active_count != active_disks:
@@ -452,7 +469,38 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
                 print_fail("⚠️  RAID 디스크 실패 감지!")
             else:
                 print_pass("RAID 상태 정상")
+            
+            # RAID 정보 요약 출력
+            if storage_info.get('raid_info'):
+                print("")
+                print("  RAID 구성 정보:")
+                for device, info in storage_info['raid_info'].items():
+                    raid_level = info['level']
+                    disk_count = info['disk_count']
+                    capacity = info['capacity_gb']
+                    
+                    # RAID 레벨 한글 표시
+                    level_map = {
+                        'raid0': 'RAID 0 (스트라이핑)',
+                        'raid1': 'RAID 1 (미러링)',
+                        'raid5': 'RAID 5',
+                        'raid6': 'RAID 6',
+                        'raid10': 'RAID 10'
+                    }
+                    level_name = level_map.get(raid_level, raid_level.upper())
+                    
+                    if capacity >= 1000:
+                        capacity_str = f"{capacity/1000:.1f}TB"
+                    else:
+                        capacity_str = f"{capacity:.1f}GB"
+                    
+                    print(f"    {device}: {level_name}")
+                    print(f"      - 디스크 개수: {disk_count}개")
+                    print(f"      - 총 용량: {capacity_str}")
+                    print(f"      - 상태: {info['status']}")
+            
             print("")
+            print("  상세 RAID 상태:")
             lines = storage_info['raid_status'].split('\n')[:15]
             for line in lines:
                 if line.strip():
