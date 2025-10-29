@@ -295,8 +295,18 @@ class NASChecker:
         result = {
             'status': 'UNKNOWN',
             'details': {},
-            'issues': []
+            'issues': [],
+            'nut_client_status': None  # NUT 클라이언트 연결 상태
         }
+        
+        # 먼저 NUT 클라이언트 서비스 상태 확인
+        nut_client_service = self.exec_command('systemctl is-active pkgctl-NutClient 2>/dev/null || systemctl is-active nut-client 2>/dev/null', timeout=5)
+        nut_client_config = self.exec_command('cat /usr/syno/etc/ups/ups.conf 2>/dev/null || cat /etc/nut/ups.conf 2>/dev/null', timeout=5)
+        
+        if nut_client_service['success'] and nut_client_service['stdout'].strip() in ['active', 'inactive']:
+            result['nut_client_status'] = nut_client_service['stdout'].strip()
+            if nut_client_config['success'] and nut_client_config['stdout'].strip():
+                result['details']['nut_client_config'] = nut_client_config['stdout'].strip()
         
         # 1순위: 시놀로지 UPS 명령 (경로 fallback)
         # PATH 검색 → 절대경로 fallback
@@ -533,8 +543,15 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
         ups_info = checker.check_ups()
         result['ups'] = ups_info
         
+        # NUT 클라이언트 서비스 상태 먼저 확인
+        if ups_info.get('nut_client_status'):
+            if ups_info['nut_client_status'] == 'active':
+                print_pass("NUT 클라이언트: 활성화됨")
+            else:
+                print_info(f"NUT 클라이언트: {ups_info['nut_client_status']}")
+        
         if ups_info['status'] == 'AVAILABLE':
-            print_pass("NAS UPS 상태 (synoups)")
+            print_pass("NAS 로컬 UPS 정보 확인됨 (synoups)")
             if ups_info['details'].get('synoups'):
                 output = ups_info['details']['synoups']
                 print("")
@@ -542,7 +559,7 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
                     if line.strip():
                         print(f"    {line}")
         elif ups_info['status'] == 'NUT_AVAILABLE':
-            print_pass("NAS UPS 상태 (NUT)")
+            print_pass("NAS 로컬 UPS 정보 확인됨 (NUT)")
             if ups_info['details'].get('nut'):
                 output = ups_info['details']['nut']
                 print("")
@@ -550,9 +567,17 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
                     if line.strip() and ':' in line:
                         print(f"    {line}")
         else:
-            # NOT_AVAILABLE: 원격 NUT 서버를 사용하는 경우 정상
-            print_info("NAS 로컬 UPS 정보 없음 (원격 NUT 서버 사용 중)")
-            print_info("  → 엣지 PC의 NUT 서버에 연결된 경우 정상입니다.")
+            # NOT_AVAILABLE: 원격 NUT 서버를 사용하는 경우
+            if ups_info.get('nut_client_status') == 'active':
+                print_pass("원격 NUT 서버에 연결 중")
+                if ups_info['details'].get('nut_client_config'):
+                    config = ups_info['details']['nut_client_config']
+                    # 서버 IP 추출
+                    for line in config.split('\n'):
+                        if 'server' in line.lower() or '[' in line:
+                            print(f"  {line.strip()}")
+            else:
+                print_info("로컬 UPS 정보 없음 (NUT 클라이언트 미설정 또는 비활성화)")
         
         # 5. 오류/경고 집계
         result['errors'] = checker.errors
