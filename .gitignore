@@ -51,6 +51,10 @@ report_*.txt
 test_*.py
 !test_system_module.py
 
+# Archive files
+*.tar.gz
+*.zip
+
 # Documentation (제외할 필요 없으면 주석 처리)
 # *.md
 
