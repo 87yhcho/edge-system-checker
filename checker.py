@@ -74,7 +74,7 @@ def get_env_config():
             'ip': os.getenv('NAS_IP', '192.168.10.30'),
             'user': os.getenv('NAS_USER', 'admin'),
             'password': os.getenv('NAS_PASSWORD', ''),
-            'port': os.getenv('NAS_PORT', '22')
+            'port': os.getenv('NAS_PORT', '2222')  # 시놀로지 커스텀 SSH 포트 (실패 시 22로 재시도)
         },
         'camera': {
             'base_ip': os.getenv('CAMERA_BASE_IP', '192.168.1'),
@@ -83,7 +83,9 @@ def get_env_config():
             'password': os.getenv('CAMERA_PASS', 'root'),
             'rtsp_path': os.getenv('CAMERA_RTSP_PATH', 'cam0_0'),
             'rtsp_port': os.getenv('CAMERA_RTSP_PORT', '554'),
-            'mediamtx_base_port': os.getenv('CAMERA_MEDIAMTX_BASE_PORT', '1111')
+            'mediamtx_base_port': os.getenv('CAMERA_MEDIAMTX_BASE_PORT', '1111'),
+            'log_base_path': os.getenv('CAMERA_LOG_BASE_PATH', '/mnt/nas/logs'),
+            'video_base_path': os.getenv('CAMERA_VIDEO_BASE_PATH', '/mnt/nas/cam')
         }
     }
 

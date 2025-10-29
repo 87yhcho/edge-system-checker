@@ -107,10 +107,11 @@ def test_camera_connection(rtsp_url: str, timeout: int = 10) -> Dict[str, Any]:
 def find_latest_log_file(camera_num: int, log_base_path: str, search_days: int = 3) -> Optional[str]:
     """
     최근 로그 파일을 자동으로 찾기 (오늘부터 최근 N일간 검색)
+    경로 구조: /mnt/nas/logs/년/월/일/시간/rtsp_streamX_YYYYMMDD_HH.log
     
     Args:
         camera_num: 카메라 번호
-        log_base_path: 로그 베이스 경로
+        log_base_path: 로그 베이스 경로 (예: /mnt/nas/logs)
         search_days: 검색할 일수 (기본 3일)
     
     Returns:
@@ -118,27 +119,42 @@ def find_latest_log_file(camera_num: int, log_base_path: str, search_days: int =
     """
     now = datetime.now()
     
-    # 오늘부터 과거로 검색
+    # 오늘부터 과거로 검색 (년/월/일/시간 구조)
     for days_ago in range(search_days):
         search_date = now - timedelta(days=days_ago)
-        date_path = search_date.strftime("%Y/%m/%d")
-        log_date = search_date.strftime("%Y%m%d")
+        year = search_date.strftime("%Y")
+        month = search_date.strftime("%m")
+        day = search_date.strftime("%d")
         
-        log_dir = os.path.join(log_base_path, date_path)
-        log_file = os.path.join(log_dir, f"rtsp_stream{camera_num}_{log_date}.log")
-        
-        if os.path.exists(log_file):
-            return log_file
+        # 해당 날짜의 모든 시간 폴더 검색 (23시부터 역순으로)
+        for hour in range(23, -1, -1):
+            hour_str = f"{hour:02d}"
+            log_dir = os.path.join(log_base_path, year, month, day, hour_str)
+            
+            if not os.path.exists(log_dir):
+                continue
+            
+            # 해당 시간 폴더에서 카메라 로그 파일 찾기
+            # 파일명 패턴: rtsp_stream{camera_num}_YYYYMMDD_HH.log
+            log_date = search_date.strftime("%Y%m%d")
+            log_file = os.path.join(log_dir, f"rtsp_stream{camera_num}_{log_date}_{hour_str}.log")
+            
+            if os.path.exists(log_file):
+                return log_file
+            
+            # 시간 없이 날짜만 있는 파일명도 체크
+            log_file_no_hour = os.path.join(log_dir, f"rtsp_stream{camera_num}_{log_date}.log")
+            if os.path.exists(log_file_no_hour):
+                return log_file_no_hour
     
-    # 날짜 경로로 못 찾으면 베이스 경로에서 직접 검색
-    # 파일명 패턴: rtsp_stream{camera_num}_*.log
+    # 새 경로에서 못 찾으면 전체 검색 (와일드카드)
     if os.path.exists(log_base_path):
         try:
             for root, dirs, files in os.walk(log_base_path):
                 for file in files:
                     if file.startswith(f"rtsp_stream{camera_num}_") and file.endswith(".log"):
                         full_path = os.path.join(root, file)
-                        # 최근 3일 내 파일만
+                        # 최근 N일 내 파일만
                         mtime = os.path.getmtime(full_path)
                         file_date = datetime.fromtimestamp(mtime)
                         if (now - file_date).days <= search_days:
@@ -149,13 +165,14 @@ def find_latest_log_file(camera_num: int, log_base_path: str, search_days: int =
     return None
 
 
-def check_camera_log(camera_num: int, log_base_path: str = "/home/koast-user/oper/video_processor/output/nas/logs") -> Dict[str, Any]:
+def check_camera_log(camera_num: int, log_base_path: str = "/mnt/nas/logs") -> Dict[str, Any]:
     """
     카메라 영상 저장 로그 확인
+    경로 구조: /mnt/nas/logs/년/월/일/시간/
     
     Args:
         camera_num: 카메라 번호 (1, 2, 3, ...)
-        log_base_path: 로그 베이스 경로
+        log_base_path: 로그 베이스 경로 (기본값: /mnt/nas/logs)
     
     Returns:
         로그 점검 결과 딕셔너리
@@ -435,13 +452,14 @@ def show_camera_stream(camera_info: Dict[str, Any], stream_type: str = "source",
         gc.collect()
 
 
-def check_video_files(camera_count: int, video_base_path: str = "/home/koast-user/oper/video_processor/output/nas/cam") -> Dict[str, Any]:
+def check_video_files(camera_count: int, video_base_path: str = "/mnt/nas/cam") -> Dict[str, Any]:
     """
     영상 파일 존재 여부 확인
+    경로 구조: /mnt/nas/cam/년/월/일/시간/
     
     Args:
         camera_count: 카메라 개수
-        video_base_path: 영상 파일 베이스 경로
+        video_base_path: 영상 파일 베이스 경로 (기본값: /mnt/nas/cam)
     
     Returns:
         영상 파일 점검 결과 딕셔너리
@@ -608,7 +626,8 @@ def check_cameras(camera_count: int, camera_config: Dict[str, str], auto_mode: b
         print("")
         print(f"[3/3] {camera['name']} - 영상 저장 로그 확인")
         print("-" * 80)
-        log_result = check_camera_log(camera['camera_num'])
+        log_base_path = camera_config.get('log_base_path', '/mnt/nas/logs')
+        log_result = check_camera_log(camera['camera_num'], log_base_path)
         camera_result['log_status'] = log_result['status']
         camera_result['log_details'] = log_result.get('details', {})
         
@@ -663,7 +682,8 @@ def check_cameras(camera_count: int, camera_config: Dict[str, str], auto_mode: b
     gc.collect()
     
     # ========== 영상 파일 저장 확인 ==========
-    video_check_result = check_video_files(camera_count)
+    video_base_path = camera_config.get('video_base_path', '/mnt/nas/cam')
+    video_check_result = check_video_files(camera_count, video_base_path)
     results['video_files'] = video_check_result
     
     # 영상 파일 확인 결과를 전체 상태에 반영

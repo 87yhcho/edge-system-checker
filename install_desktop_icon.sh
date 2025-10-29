@@ -21,6 +21,15 @@ fi
 echo "🔧 실행 권한 설정 중..."
 chmod +x "$DESKTOP_FILE"
 
+# 데스크톱 파일 유효성 검사
+echo "🔍 데스크톱 파일 유효성 검사 중..."
+desktop-file-validate "$DESKTOP_FILE" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo "✅ 데스크톱 파일이 유효합니다"
+else
+    echo "⚠️  데스크톱 파일에 문제가 있을 수 있습니다"
+fi
+
 # 바탕화면에 복사
 DESKTOP_DIR="$HOME/Desktop"
 if [ -d "$DESKTOP_DIR" ]; then
