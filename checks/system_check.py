@@ -310,6 +310,111 @@ def check_cron() -> Dict[str, Any]:
     return results
 
 
+def check_tomcat_details() -> Dict[str, Any]:
+    """Tomcat 세부 설정 점검"""
+    results = {}
+    
+    # 1. Tomcat 버전 확인
+    version_cmd = "/opt/tomcat/bin/version.sh 2>/dev/null | grep 'Server version'"
+    version_result = run_command(version_cmd)
+    if version_result['success'] and version_result['stdout']:
+        results['version'] = {
+            'status': 'PASS',
+            'value': version_result['stdout'].split(':')[-1].strip() if ':' in version_result['stdout'] else version_result['stdout']
+        }
+    else:
+        results['version'] = {'status': 'SKIP', 'value': 'Not accessible'}
+    
+    # 2. Server.xml 포트 80 확인
+    port_result = run_command("grep 'Connector' /opt/tomcat/conf/server.xml 2>/dev/null | grep 'port=\"80\"'")
+    if port_result['success'] and port_result['stdout']:
+        results['http_port'] = {'status': 'PASS', 'value': 'Port 80'}
+    else:
+        results['http_port'] = {'status': 'SKIP', 'value': 'Not found'}
+    
+    # 3. 로그 파일 존재 확인
+    log_check = run_command("ls -1 /opt/tomcat/logs/edge*.log 2>/dev/null | wc -l")
+    if log_check['success'] and log_check['stdout'] and int(log_check['stdout']) > 0:
+        results['logs'] = {'status': 'PASS', 'value': f"{log_check['stdout']} log files"}
+    else:
+        results['logs'] = {'status': 'SKIP', 'value': 'No logs'}
+    
+    # 4. 힙 메모리 설정 확인
+    heap_result = run_command("grep -E 'Xms|Xmx' /etc/systemd/system/tomcat.service 2>/dev/null")
+    if heap_result['success'] and heap_result['stdout']:
+        xms = re.search(r'-Xms(\S+)', heap_result['stdout'])
+        xmx = re.search(r'-Xmx(\S+)', heap_result['stdout'])
+        if xms and xmx:
+            results['heap_memory'] = {'status': 'PASS', 'value': f"Xms{xms.group(1)} Xmx{xmx.group(1)}"}
+        else:
+            results['heap_memory'] = {'status': 'PASS', 'value': 'Configured'}
+    else:
+        results['heap_memory'] = {'status': 'SKIP', 'value': 'Not configured'}
+    
+    # 5. 로그 로테이션 설정
+    rotate_result = run_command("test -f /etc/logrotate.d/tomcat && echo 'configured'")
+    if rotate_result['success'] and 'configured' in rotate_result['stdout']:
+        results['logrotate'] = {'status': 'PASS', 'value': 'Configured'}
+    else:
+        results['logrotate'] = {'status': 'SKIP', 'value': 'Not configured'}
+    
+    return results
+
+
+def check_postgresql_details() -> Dict[str, Any]:
+    """PostgreSQL 세부 설정 점검"""
+    results = {}
+    
+    # 1. PostgreSQL 버전 확인
+    version_result = run_command("psql -V 2>/dev/null")
+    if version_result['success']:
+        results['version'] = {'status': 'PASS', 'value': version_result['stdout']}
+    else:
+        results['version'] = {'status': 'SKIP', 'value': 'psql not found'}
+    
+    # 2. PostGIS 설치 확인 (권한 없이 패키지 확인)
+    postgis_check = run_command("dpkg -l | grep postgis")
+    if postgis_check['success'] and 'postgis' in postgis_check['stdout']:
+        results['postgis'] = {'status': 'PASS', 'value': 'Installed'}
+    else:
+        results['postgis'] = {'status': 'SKIP', 'value': 'Not found'}
+    
+    # 3. 데이터 디렉토리 용량 확인
+    df_result = run_command("df -h /var/lib/postgresql 2>/dev/null | tail -1")
+    if df_result['success']:
+        parts = df_result['stdout'].split()
+        if len(parts) >= 5:
+            try:
+                usage_pct = int(parts[4].replace('%', ''))
+                results['disk_usage'] = {
+                    'status': 'PASS' if usage_pct < 80 else 'WARN',
+                    'usage': parts[4],
+                    'avail': parts[3]
+                }
+            except (ValueError, IndexError):
+                results['disk_usage'] = {'status': 'SKIP', 'value': 'Parse error'}
+        else:
+            results['disk_usage'] = {'status': 'SKIP', 'value': 'Not mounted'}
+    else:
+        results['disk_usage'] = {'status': 'SKIP', 'value': 'Not accessible'}
+    
+    # 4. 자동 재시작 설정 확인
+    restart_result = run_command("systemctl is-enabled postgresql 2>/dev/null")
+    if restart_result['success'] and 'enabled' in restart_result['stdout']:
+        results['autostart'] = {'status': 'PASS', 'value': 'Enabled'}
+    else:
+        results['autostart'] = {'status': 'SKIP', 'value': 'Unknown'}
+    
+    # 5. 설정 파일 존재 확인
+    conf_result = run_command("ls /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -1")
+    if conf_result['success'] and conf_result['stdout']:
+        results['config_file'] = {'status': 'PASS', 'value': 'Found'}
+    else:
+        results['config_file'] = {'status': 'SKIP', 'value': 'Not found'}
+    
+    return results
+
+
 def check_system_status() -> Dict[str, Any]:
     """전체 시스템 종합 점검"""
     from utils.ui import (
@@ -460,6 +565,42 @@ def check_system_status() -> Dict[str, Any]:
         else:
             print_warning(f"일일 동기화 작업: {sync_info.get('value')}")
     
+    # 8. Tomcat 세부 설정
+    print("")
+    print_info("Tomcat 세부 설정 확인 중...")
+    tomcat_details = check_tomcat_details()
+    result['tomcat_details'] = tomcat_details
+    
+    for key, info in tomcat_details.items():
+        status = info.get('status', 'UNKNOWN')
+        value = info.get('value', 'N/A')
+        if status == 'PASS':
+            print_pass(f"Tomcat {key}: {value}")
+        elif status == 'WARN':
+            print_warning(f"Tomcat {key}: {value}")
+        elif status == 'SKIP':
+            pass  # SKIP 항목은 출력 생략
+        else:
+            print_info(f"Tomcat {key}: {value}")
+    
+    # 9. PostgreSQL 세부 설정
+    print("")
+    print_info("PostgreSQL 세부 설정 확인 중...")
+    pg_details = check_postgresql_details()
+    result['postgresql_details'] = pg_details
+    
+    for key, info in pg_details.items():
+        status = info.get('status', 'UNKNOWN')
+        value = info.get('value', 'N/A')
+        if status == 'PASS':
+            print_pass(f"PostgreSQL {key}: {value}")
+        elif status == 'WARN':
+            print_warning(f"PostgreSQL {key}: {value}")
+        elif status == 'SKIP':
+            pass  # SKIP 항목은 출력 생략
+        else:
+            print_info(f"PostgreSQL {key}: {value}")
+    
     # 전체 판정 및 통계
     print("")
     
@@ -474,6 +615,8 @@ def check_system_status() -> Dict[str, Any]:
         ('네트워크', network),
         ('디스크', disk),
         ('Cron', cron),
+        ('Tomcat', tomcat_details),
+        ('PostgreSQL', pg_details),
     ]
     for category_name, category in named_categories:
         for key, item in category.items():
