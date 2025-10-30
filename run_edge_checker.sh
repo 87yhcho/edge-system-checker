@@ -16,11 +16,13 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# 필요한 패키지 확인
-python3 -c "import cv2, psutil, requests" 2>/dev/null
+# 필요한 패키지 확인 (실제 사용하는 패키지만)
+python3 -c "import cv2, paramiko, psycopg2, dotenv" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "❌ 필요한 패키지가 설치되지 않았습니다."
     echo "   다음 명령어로 설치해주세요:"
+    echo "   ./INSTALL_PACKAGES.sh"
+    echo "   또는"
     echo "   pip3 install -r requirements.txt"
     read -p "Press Enter to close..."
     exit 1
