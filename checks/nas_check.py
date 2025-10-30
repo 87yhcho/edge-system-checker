@@ -402,82 +402,80 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
         # RAID 상태 출력
         print("")
         print_info("RAID 상태 확인 중...")
-        if storage_info.get('raid_status') and storage_info['raid_status'] != 'N/A (SW RAID 없음)':
-            # RAID 정보 요약 출력
-            if storage_info.get('raid_info'):
-                # 주 데이터 볼륨(md2) 찾기
-                data_volumes = [k for k in storage_info['raid_info'].keys() if k == 'md2']
-                system_volumes = [k for k in storage_info['raid_info'].keys() if k in ['md0', 'md1']]
-                
-                # 데이터 볼륨의 RAID 레벨 추출
-                raid_level_display = None
-                if data_volumes:
-                    raid_level = storage_info['raid_info'][data_volumes[0]]['level']
-                    level_map = {
-                        'raid0': 'RAID 0',
-                        'raid1': 'RAID 1',
-                        'raid5': 'RAID 5',
-                        'raid6': 'RAID 6',
-                        'raid10': 'RAID 10'
-                    }
-                    raid_level_display = level_map.get(raid_level, raid_level.upper())
-                
-                # RAID 디스크 실패 확인
-                if any('RAID 디스크 실패' in issue for issue in storage_info.get('critical_issues', [])):
-                    if raid_level_display:
-                        print_fail(f"⚠️  {raid_level_display} 디스크 실패 감지!")
-                    else:
-                        print_fail("⚠️  RAID 디스크 실패 감지!")
+        if storage_info.get('raid_info'):
+            # 주 데이터 볼륨(md2) 찾기
+            data_volumes = [k for k in storage_info['raid_info'].keys() if k == 'md2']
+            system_volumes = [k for k in storage_info['raid_info'].keys() if k in ['md0', 'md1']]
+            
+            # 데이터 볼륨의 RAID 레벨 추출
+            raid_level_display = None
+            if data_volumes:
+                raid_level = storage_info['raid_info'][data_volumes[0]]['level']
+                level_map = {
+                    'raid0': 'RAID 0',
+                    'raid1': 'RAID 1',
+                    'raid5': 'RAID 5',
+                    'raid6': 'RAID 6',
+                    'raid10': 'RAID 10'
+                }
+                raid_level_display = level_map.get(raid_level, raid_level.upper())
+            
+            # RAID 디스크 실패 확인
+            if any('RAID 디스크 실패' in issue for issue in storage_info.get('critical_issues', [])):
+                if raid_level_display:
+                    print_fail(f"⚠️  {raid_level_display} 디스크 실패 감지!")
                 else:
-                    if raid_level_display:
-                        print_pass(f"{raid_level_display} 구성으로 정상")
-                    else:
-                        print_pass("RAID 상태 정상")
-                print("")
+                    print_fail("⚠️  RAID 디스크 실패 감지!")
+            else:
+                if raid_level_display:
+                    print_pass(f"{raid_level_display} 구성으로 정상")
+                else:
+                    print_pass("RAID 상태 정상")
+            print("")
+            
+            # 데이터 볼륨 먼저 표시
+            for device in sorted(data_volumes + system_volumes):
+                info = storage_info['raid_info'][device]
+                raid_level = info['level']
+                disk_count = info['disk_count']
+                capacity = info['capacity_gb']
+                disk_numbers = info.get('disk_numbers', [])
                 
-                # 데이터 볼륨 먼저 표시
-                for device in sorted(data_volumes + system_volumes):
-                    info = storage_info['raid_info'][device]
-                    raid_level = info['level']
-                    disk_count = info['disk_count']
-                    capacity = info['capacity_gb']
-                    disk_numbers = info.get('disk_numbers', [])
-                    
-                    # RAID 레벨 한글 표시
-                    level_map = {
-                        'raid0': 'RAID 0',
-                        'raid1': 'RAID 1',
-                        'raid5': 'RAID 5',
-                        'raid6': 'RAID 6',
-                        'raid10': 'RAID 10'
-                    }
-                    level_name = level_map.get(raid_level, raid_level.upper())
-                    
-                    if capacity >= 1000:
-                        capacity_str = f"{capacity/1000:.1f}TB"
-                    else:
-                        capacity_str = f"{capacity:.1f}GB"
-                    
-                    # 디스크 슬롯 번호 표시
-                    if disk_numbers:
-                        disk_info = f"슬롯 {', '.join(disk_numbers)}번에 {disk_count}개 디스크 연결됨"
-                    else:
-                        disk_info = f"{disk_count}개 디스크 사용 중"
-                    
-                    # 볼륨 타입 판단
-                    if device == 'md2':
-                        vol_type = "데이터 볼륨"
-                        print(f"  📀 {vol_type}: {level_name}로 구성됨")
-                    else:
-                        vol_type = "시스템 볼륨" if device == 'md0' else "SWAP 볼륨"
-                        print(f"  💾 {vol_type}: {level_name}로 구성됨")
-                    
-                    print(f"     - {disk_info}")
-                    print(f"     - 총 용량: {capacity_str}")
-                    print(f"     - 상태: {info['status']} (정상)")
-                    print("")
+                # RAID 레벨 한글 표시
+                level_map = {
+                    'raid0': 'RAID 0',
+                    'raid1': 'RAID 1',
+                    'raid5': 'RAID 5',
+                    'raid6': 'RAID 6',
+                    'raid10': 'RAID 10'
+                }
+                level_name = level_map.get(raid_level, raid_level.upper())
+                
+                if capacity >= 1000:
+                    capacity_str = f"{capacity/1000:.1f}TB"
+                else:
+                    capacity_str = f"{capacity:.1f}GB"
+                
+                # 디스크 슬롯 번호 표시
+                if disk_numbers:
+                    disk_info = f"슬롯 {', '.join(disk_numbers)}번에 {disk_count}개 디스크 연결됨"
+                else:
+                    disk_info = f"{disk_count}개 디스크 사용 중"
+                
+                # 볼륨 타입 판단
+                if device == 'md2':
+                    vol_type = "데이터 볼륨"
+                    print(f"  📀 {vol_type}: {level_name}로 구성됨")
+                else:
+                    vol_type = "시스템 볼륨" if device == 'md0' else "SWAP 볼륨"
+                    print(f"  💾 {vol_type}: {level_name}로 구성됨")
+                
+                print(f"     - {disk_info}")
+                print(f"     - 총 용량: {capacity_str}")
+                print(f"     - 상태: {info['status']} (정상)")
+                print("")
         else:
-            print_warning("RAID 정보가 없습니다 (소프트웨어 RAID 미사용)")
+            print_warning("RAID 정보 없음 (SW RAID 미사용 또는 정보를 가져올 수 없음)")
         
         # 4. 오류/경고 집계
         result['errors'] = checker.errors
