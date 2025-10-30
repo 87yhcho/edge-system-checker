@@ -419,12 +419,6 @@ def check_nas_status(nas_config: Dict[str, str]) -> Dict[str, Any]:
         # RAID 상태 출력
         print("")
         print_info("RAID 상태 확인 중...")
-        
-        # 디버그: RAID 정보 확인
-        print(f"DEBUG: raid_status = {storage_info.get('raid_status')}")
-        print(f"DEBUG: raid_info keys = {list(storage_info.get('raid_info', {}).keys())}")
-        print(f"DEBUG: raid_info = {storage_info.get('raid_info')}")
-        
         if storage_info.get('raid_info'):
             # 주 데이터 볼륨(md2) 찾기
             data_volumes = [k for k in storage_info['raid_info'].keys() if k == 'md2']
