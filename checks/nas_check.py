@@ -167,31 +167,49 @@ class NASChecker:
             #     → [4/3]는 "4개 슬롯 중 3개 사용", [UUU_]는 3개 활성 + 1개 빈 슬롯
             #     → 실제 사용 디스크(3개)와 활성 디스크(U 3개)가 일치하면 정상
             
-            # 각 md 디바이스별로 검사
-            for line in raid['stdout'].splitlines():
-                # RAID 상태 라인: "md0 : active raid1 ... blocks [4/3] [UUU_]"
+            # 각 md 디바이스별로 검사 (여러 줄 처리)
+            lines = raid['stdout'].splitlines()
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                
+                # RAID 디바이스 시작 라인: "md0 : active raid1 ..."
                 device_match = re.search(r'(md\d+)\s*:\s*active\s+(raid\d+)', line)
                 if not device_match:
+                    i += 1
                     continue
                 
                 device_name = device_match.group(1)
                 raid_level = device_match.group(2)  # raid1, raid5, raid6 등
                 
                 # 디스크 슬롯 번호 추출 (예: sata1p3[0] sata3p3[2] sata2p3[1])
-                # sata1, sata2, sata3, sata4 등의 번호를 추출
                 disk_slots = re.findall(r'(sata\d+)', line)
                 disk_numbers = sorted(set([d.replace('sata', '') for d in disk_slots]))
                 
-                # 블록 수 추출 (총 용량 계산용)
-                blocks_match = re.search(r'(\d+)\s+blocks', line)
-                blocks = int(blocks_match.group(1)) if blocks_match else 0
-                # 블록은 보통 1KB이므로 GB로 변환
-                capacity_gb = blocks / 1024 / 1024 if blocks > 0 else 0
+                # 다음 줄에서 blocks, [x/y], [UUU_] 정보 찾기
+                blocks = 0
+                capacity_gb = 0
+                slot_match = None
+                state_match = None
                 
-                # [x/y] 패턴: 전체 슬롯 수 / 실제 사용 디스크 수
-                slot_match = re.search(r'\[(\d+)/(\d+)\]', line)
-                # [U_] 패턴: 활성 상태
-                state_match = re.search(r'\[([U_]+)\]', line)
+                # 현재 줄과 다음 2-3줄에서 정보 수집
+                for j in range(i, min(i + 4, len(lines))):
+                    check_line = lines[j]
+                    
+                    # 블록 수 추출
+                    if not blocks:
+                        blocks_match = re.search(r'(\d+)\s+blocks', check_line)
+                        if blocks_match:
+                            blocks = int(blocks_match.group(1))
+                            capacity_gb = blocks / 1024 / 1024
+                    
+                    # [x/y] 패턴
+                    if not slot_match:
+                        slot_match = re.search(r'\[(\d+)/(\d+)\]', check_line)
+                    
+                    # [U_] 패턴
+                    if not state_match:
+                        state_match = re.search(r'\[([U_]+)\]', check_line)
                 
                 if slot_match and state_match:
                     total_slots = int(slot_match.group(1))
@@ -208,28 +226,27 @@ class NASChecker:
                         'disk_count': active_disks,
                         'status': raid_state,
                         'active': active_count,
-                        'disk_numbers': disk_numbers  # 디스크 슬롯 번호 (1,2,3 등)
+                        'disk_numbers': disk_numbers
                     }
                     
-                    # 실제 장애 판단: 사용 중인 디스크 수와 활성(U) 개수가 다르면 장애
+                    # 실제 장애 판단
                     if active_count != active_disks:
                         issue = f"{device_name}: RAID 디스크 장애 - {active_disks}개 중 {active_count}개만 활성 [{raid_state}]"
                         result['critical_issues'].append(issue)
                         self.errors.append(issue)
-                    # [UUU_]처럼 _ 있지만 실제로는 빈 슬롯일 뿐 (정상)
                     elif failed_count > 0 and active_count == active_disks:
-                        # 정보성 메시지 (에러 아님)
-                        pass
+                        pass  # 정상 (빈 슬롯)
                 elif state_match:
-                    # [x/y] 패턴 없이 [UU_] 패턴만 있는 경우
+                    # [x/y] 없이 [UU_]만 있는 경우
                     raid_state = state_match.group(1)
                     if '_' in raid_state:
-                        # 보수적으로 경고 처리
                         failed_count = raid_state.count('_')
                         total_count = len(raid_state)
                         warning = f"{device_name}: RAID 상태 확인 필요 [{raid_state}] (_{failed_count}/{total_count})"
                         result['critical_issues'].append(warning)
                         self.warnings.append(warning)
+                
+                i += 1
             
             # 추가: "FAILED" 키워드 명시적 체크
             if 'FAILED' in raid['stdout'].upper() or '(F)' in raid['stdout']:
