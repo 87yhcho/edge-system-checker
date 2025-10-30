@@ -104,63 +104,41 @@ def test_camera_connection(rtsp_url: str, timeout: int = 10) -> Dict[str, Any]:
             cap.release()
 
 
-def find_latest_log_file(camera_num: int, log_base_path: str, search_days: int = 3) -> Optional[str]:
+def find_latest_log_file(camera_num: int, log_base_path: str, search_days: int = 1) -> Optional[str]:
     """
     최근 로그 파일을 자동으로 찾기 (오늘부터 최근 N일간 검색)
-    경로 구조: /mnt/nas/logs/년/월/일/시간/rtsp_streamX_YYYYMMDD_HH.log
+    경로 구조: /mnt/nas/logs/년/월/일/rtsp_streamX_YYYYMMDD.log
     
     Args:
         camera_num: 카메라 번호
         log_base_path: 로그 베이스 경로 (예: /mnt/nas/logs)
-        search_days: 검색할 일수 (기본 3일)
+        search_days: 검색할 일수 (기본 1일 - 오늘과 어제)
     
     Returns:
         로그 파일 경로 또는 None
     """
     now = datetime.now()
     
-    # 오늘부터 과거로 검색 (년/월/일/시간 구조)
-    for days_ago in range(search_days):
+    # 오늘부터 과거로 검색 (년/월/일 구조, 시간 폴더 없음)
+    for days_ago in range(search_days + 1):  # 오늘 + search_days 전까지
         search_date = now - timedelta(days=days_ago)
         year = search_date.strftime("%Y")
         month = search_date.strftime("%m")
         day = search_date.strftime("%d")
+        log_date = search_date.strftime("%Y%m%d")
         
-        # 해당 날짜의 모든 시간 폴더 검색 (23시부터 역순으로)
-        for hour in range(23, -1, -1):
-            hour_str = f"{hour:02d}"
-            log_dir = os.path.join(log_base_path, year, month, day, hour_str)
-            
-            if not os.path.exists(log_dir):
-                continue
-            
-            # 해당 시간 폴더에서 카메라 로그 파일 찾기
-            # 파일명 패턴: rtsp_stream{camera_num}_YYYYMMDD_HH.log
-            log_date = search_date.strftime("%Y%m%d")
-            log_file = os.path.join(log_dir, f"rtsp_stream{camera_num}_{log_date}_{hour_str}.log")
-            
-            if os.path.exists(log_file):
-                return log_file
-            
-            # 시간 없이 날짜만 있는 파일명도 체크
-            log_file_no_hour = os.path.join(log_dir, f"rtsp_stream{camera_num}_{log_date}.log")
-            if os.path.exists(log_file_no_hour):
-                return log_file_no_hour
-    
-    # 새 경로에서 못 찾으면 전체 검색 (와일드카드)
-    if os.path.exists(log_base_path):
-        try:
-            for root, dirs, files in os.walk(log_base_path):
-                for file in files:
-                    if file.startswith(f"rtsp_stream{camera_num}_") and file.endswith(".log"):
-                        full_path = os.path.join(root, file)
-                        # 최근 N일 내 파일만
-                        mtime = os.path.getmtime(full_path)
-                        file_date = datetime.fromtimestamp(mtime)
-                        if (now - file_date).days <= search_days:
-                            return full_path
-        except Exception:
-            pass
+        # 날짜 폴더 경로
+        log_dir = os.path.join(log_base_path, year, month, day)
+        
+        if not os.path.exists(log_dir):
+            continue
+        
+        # 해당 날짜 폴더에서 카메라 로그 파일 찾기
+        # 파일명 패턴: rtsp_stream{camera_num}_YYYYMMDD.log
+        log_file = os.path.join(log_dir, f"rtsp_stream{camera_num}_{log_date}.log")
+        
+        if os.path.exists(log_file):
+            return log_file
     
     return None
 
@@ -186,16 +164,16 @@ def check_camera_log(camera_num: int, log_base_path: str = "/mnt/nas/logs") -> D
         'details': {}
     }
     
-    # 로그 파일 자동 검색 (최근 3일)
+    # 로그 파일 자동 검색 (오늘과 어제)
     print_info(f"카메라 {camera_num} 로그 파일 검색 중...")
-    log_file = find_latest_log_file(camera_num, log_base_path, search_days=3)
+    log_file = find_latest_log_file(camera_num, log_base_path, search_days=1)
     
     # 로그 파일 존재 확인
     if not log_file:
         print_warning(f"로그 파일을 찾을 수 없습니다 (검색 경로: {log_base_path})")
-        print_warning("최근 3일 내 로그가 없습니다")
+        print_warning("오늘과 어제 로그가 없습니다")
         result['status'] = 'SKIP'
-        result['details']['message'] = '로그 파일 없음 (3일 내)'
+        result['details']['message'] = '로그 파일 없음 (오늘/어제)'
         return result
     
     print_info(f"로그 파일 발견: {log_file}")
