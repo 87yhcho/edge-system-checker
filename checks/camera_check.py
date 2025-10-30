@@ -481,10 +481,10 @@ def check_video_files(camera_count: int, video_base_path: str = "/mnt/nas/cam") 
     
     now = datetime.now()
     
-    # 현재 시간 기준으로 폴더 경로 찾기 (현재 시간 및 최근 1시간 검색)
+    # 현재 시간 기준으로 폴더 경로 찾기 (현재 시간 및 최근 2시간 검색 - 날짜 변경 대응)
     found_files = {}
     
-    for minutes_ago in range(0, 70, 10):  # 0, 10, 20, ..., 60분 전까지 검색
+    for minutes_ago in range(0, 130, 10):  # 0, 10, 20, ..., 120분 전까지 검색 (2시간)
         check_time = now - timedelta(minutes=minutes_ago)
         date_path = check_time.strftime("%Y/%m/%d/%H")
         video_dir = os.path.join(video_base_path, date_path)
@@ -508,8 +508,8 @@ def check_video_files(camera_count: int, video_base_path: str = "/mnt/nas/cam") 
                     file_time = datetime.fromtimestamp(mtime)
                     time_diff = (now - file_time).total_seconds() / 60
                     
-                    # 10분 이내 파일만 인정
-                    if time_diff <= 10:
+                    # 30분 이내 파일만 인정 (날짜 변경 시 여유 시간 확보)
+                    if time_diff <= 30:
                         found_files[cam_num] = {
                             'path': latest_file,
                             'time': file_time,
@@ -525,7 +525,7 @@ def check_video_files(camera_count: int, video_base_path: str = "/mnt/nas/cam") 
             print_pass(f"카메라 {cam_num} 영상 발견: {os.path.basename(file_info['path'])} ({file_info['minutes_ago']:.1f}분 전)")
         else:
             result['missing_videos'].append(cam_num)
-            print_fail(f"카메라 {cam_num} 영상 없음 (최근 10분 내)")
+            print_fail(f"카메라 {cam_num} 영상 없음 (최근 30분 내)")
     
     # 전체 판정
     print("")
