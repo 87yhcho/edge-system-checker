@@ -333,13 +333,35 @@ CAMERA_MEDIAMTX_BASE_PORT=1111
 
 ## 🐛 트러블슈팅
 
+### Git 관련
+
+#### Git Pull 충돌 해결
+```bash
+# 로컬 변경사항이 있어서 pull이 실패할 때
+cd ~/edge-system-checker
+
+# 방법 1: 로컬 변경사항 버리고 원격으로 덮어쓰기 (권장)
+git restore .
+git pull origin main
+
+# 방법 2: 로컬 변경사항 임시 저장
+git stash
+git pull origin main
+git stash pop  # 필요시 다시 적용
+
+# 방법 3: 완전히 재설정 (선택사항)
+rm -rf ~/edge-system-checker
+git clone https://github.com/87yhcho/edge-system-checker.git
+cd edge-system-checker
+```
+
 ### UV 관련
 
 #### UV 설치 실패
 ```bash
 # 수동 설치
 curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.cargo/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 #### UV가 Python을 찾지 못함
