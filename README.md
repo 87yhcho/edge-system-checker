@@ -151,41 +151,83 @@ Edge 시스템(UPS, 카메라, NAS, 시스템)을 자동으로 점검하는 Pyth
 
 ## 📦 설치 방법
 
-### 필수 요구사항
+### 방법 1: UV 사용 (권장) ⚡
+
+#### 필수 요구사항
+- Ubuntu/Debian Linux
 - Python 3.11 이상
-- pip
-- venv
+- Internet connection
 
-### 1. 저장소 클론
+#### 자동 설치 스크립트
 ```bash
-git clone https://github.com/YOUR_USERNAME/edge-system-checker.git
+# 저장소 클론
+git clone https://github.com/87yhcho/edge-system-checker.git
 cd edge-system-checker
-```
 
-### 2. 가상 환경 생성 및 활성화
-```bash
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 또는
-venv\Scripts\activate  # Windows
-```
+# 설치 스크립트 실행 (UV 자동 설치)
+chmod +x INSTALL_PACKAGES.sh
+./INSTALL_PACKAGES.sh
 
-### 3. 의존성 설치
-```bash
-pip install -r requirements.txt
-```
-
-### 4. 환경 변수 설정
-```bash
+# 환경 변수 설정
 cp env.example .env
-# .env 파일을 열어서 실제 값으로 수정
+nano .env  # 실제 값으로 수정
+
+# 실행
+./run_edge_checker.sh
+```
+
+#### 수동 설치
+```bash
+# UV 설치
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# 시스템 의존성
+sudo apt update
+sudo apt install -y python3 python3-dev libopencv-dev libpq-dev
+
+# 환경 변수 설정
+cp env.example .env
+nano .env
+
+# 실행
+uv run checker.py
+```
+
+### 방법 2: 기존 pip/venv 방식 (호환성 유지)
+
+```bash
+# 저장소 클론
+git clone https://github.com/87yhcho/edge-system-checker.git
+cd edge-system-checker
+
+# 가상환경 생성
+python3 -m venv venv
+source venv/bin/activate
+
+# 의존성 설치
+pip install -r requirements.txt
+
+# 환경 변수 설정
+cp env.example .env
+nano .env
+
+# 실행
+python checker.py
 ```
 
 ## 🚀 사용 방법
 
-### 기본 실행
+### UV로 실행 (권장)
 ```bash
-python checker.py
+./run_edge_checker.sh    # UV 자동 설치 + 실행
+# 또는
+uv run checker.py         # 직접 실행
+```
+
+### 기존 방식으로 실행
+```bash
+python3 checker.py
 ```
 
 ### 카메라 점검 모드 선택
@@ -291,18 +333,54 @@ CAMERA_MEDIAMTX_BASE_PORT=1111
 
 ## 🐛 트러블슈팅
 
-### NumPy 호환성 문제
+### UV 관련
+
+#### UV 설치 실패
+```bash
+# 수동 설치
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+#### UV가 Python을 찾지 못함
+```bash
+# Python 버전 확인
+python3 --version  # 3.11 이상이어야 함
+
+# UV가 사용할 Python 지정
+export UV_PYTHON=$(which python3)
+```
+
+### 전통적 pip/venv 방식
+
+#### NumPy 호환성 문제
 ```bash
 pip install "numpy<2.0"
 ```
 
-### OpenCV 비디오 에러 메시지
+#### pip 설치 권한 오류
+```bash
+# 가상환경 사용
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 기타
+
+#### OpenCV 비디오 에러 메시지
 - H.264, HEVC 디코딩 경고는 정상 현상
 - 이미 로그 레벨 설정으로 숨겨져 있음
 
-### SSH 연결 실패
+#### SSH 연결 실패
 - NAS IP, 포트, 계정 정보 확인
 - 방화벽 설정 확인
+
+#### 시스템 패키지 부족
+```bash
+# OpenCV, PostgreSQL 라이브러리 설치
+sudo apt install -y libopencv-dev libpq-dev
+```
 
 ## 📝 라이센스
 
@@ -315,6 +393,13 @@ MIT License
 - 대상 시스템: Edge 장비 (Ubuntu/Debian)
 
 ## 🎉 업데이트 내역
+
+- **2025-01-29**: UV 기반 배포로 전환 ⚡
+  - UV 패키지 관리 시스템 도입
+  - pip 대비 10-100배 빠른 의존성 해결
+  - pyproject.toml 추가
+  - 자동 UV 설치 스크립트
+  - 기존 pip/venv 방식 호환성 유지
 
 - **2025-10-27**: 초기 릴리스
   - UPS/NUT 점검

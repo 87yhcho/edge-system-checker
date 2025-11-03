@@ -1,9 +1,9 @@
 #!/bin/bash
-# Edge System Checker 필수 패키지 설치 스크립트
-# 10.1.10.157 장비용
+# Edge System Checker UV 기반 설치 스크립트
+# 모든 Edge 장비용
 
 echo "=========================================="
-echo "Edge System Checker 패키지 설치"
+echo "Edge System Checker UV 설치"
 echo "=========================================="
 echo ""
 
@@ -14,41 +14,61 @@ sudo apt update
 # 2. Python 기본 패키지
 echo ""
 echo "2. Python 기본 패키지 설치 중..."
-sudo apt install -y python3-pip python3-venv python3-dev
+sudo apt install -y python3 python3-dev python3-pip
 
-# 3. OpenCV 의존성
+# 3. OpenCV 시스템 의존성 (libopencv-dev는 선택사항)
 echo ""
-echo "3. OpenCV 의존성 설치 중..."
-sudo apt install -y libopencv-dev python3-opencv
+echo "3. OpenCV 시스템 의존성 설치 중..."
+sudo apt install -y libopencv-dev
 
-# 4. PostgreSQL 클라이언트
+# 4. PostgreSQL 클라이언트 라이브러리
 echo ""
-echo "4. PostgreSQL 클라이언트 설치 중..."
-sudo apt install -y python3-psycopg2
+echo "4. PostgreSQL 클라이언트 라이브러리 설치 중..."
+sudo apt install -y libpq-dev
 
-# 5. 기타 필수 패키지
+# 5. UV 설치
 echo ""
-echo "5. 기타 Python 패키지 설치 중..."
-sudo apt install -y python3-paramiko python3-dotenv python3-colorama python3-numpy
+echo "5. UV 설치 중..."
+if ! command -v uv &> /dev/null; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    
+    # 현재 셸에서 PATH 추가
+    export PATH="$HOME/.cargo/bin:$PATH"
+    
+    # .bashrc에도 추가 (영구적)
+    if ! grep -q 'export PATH="$HOME/.cargo/bin:$PATH"' ~/.bashrc; then
+        echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
+    fi
+    
+    echo "✅ UV 설치 완료"
+else
+    echo "✅ UV가 이미 설치되어 있습니다"
+fi
+
+# UV PATH 추가 (즉시 적용)
+export PATH="$HOME/.cargo/bin:$PATH"
 
 echo ""
 echo "=========================================="
 echo "✅ 모든 패키지 설치 완료!"
 echo "=========================================="
 echo ""
-echo "설치된 패키지 확인:"
-python3 -c "
-import sys
-packages = ['cv2', 'numpy', 'paramiko', 'psycopg2', 'dotenv', 'colorama']
-for pkg in packages:
-    try:
-        __import__(pkg)
-        print(f'  ✓ {pkg}')
-    except ImportError:
-        print(f'  ✗ {pkg} (누락)')
-"
+echo "설치 확인:"
+echo "  UV 버전: $(uv --version)"
+echo "  Python 버전: $(python3 --version)"
 
 echo ""
-echo "전체 시스템 체크 실행:"
-echo "  cd edge-system-checker && python3 checker.py"
-
+echo "=========================================="
+echo "다음 단계:"
+echo "=========================================="
+echo ""
+echo "1. 환경 변수 설정:"
+echo "   cd edge-system-checker"
+echo "   cp env.example .env"
+echo "   nano .env  # 실제 값으로 수정"
+echo ""
+echo "2. 프로그램 실행:"
+echo "   ./run_edge_checker.sh"
+echo ""
+echo "또는 직접 실행:"
+echo "   uv run checker.py"
