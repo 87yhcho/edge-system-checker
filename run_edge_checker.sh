@@ -18,7 +18,7 @@ if ! command -v uv &> /dev/null; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
     
     # PATH에 UV 추가 (이번 세션에만)
-    export PATH="$HOME/.cargo/bin:$PATH"
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
     
     if ! command -v uv &> /dev/null; then
         echo "❌ UV 설치 실패. 수동으로 설치해주세요:"
@@ -29,6 +29,9 @@ if ! command -v uv &> /dev/null; then
     fi
     echo "✅ UV 설치 완료"
 fi
+
+# UV PATH 추가 (혹시 모를 경우를 위해)
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 echo "✅ UV 확인 완료"
 echo "🚀 Edge System Checker를 시작합니다..."
