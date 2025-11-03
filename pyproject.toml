@@ -1,13 +1,11 @@
+# UV를 위한 pyproject.toml
+# UV를 pip 대신 사용하여 빠르게 패키지를 설치합니다.
+
 [project]
 name = "edge-system-checker"
 version = "2.1.0"
-description = "Edge 시스템 종합 점검 도구 - UPS, 카메라, NAS, 시스템 자동 점검"
-readme = "README.md"
+description = "Edge 시스템 종합 점검 도구"
 requires-python = ">=3.11"
-license = {text = "MIT"}
-authors = [
-    {name = "Edge System Checker Team"}
-]
 
 dependencies = [
     "opencv-python==4.8.1.78",
@@ -18,20 +16,8 @@ dependencies = [
     "colorama==0.4.6",
 ]
 
-[project.scripts]
-edge-checker = "checker:main"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [tool.uv]
 dev-dependencies = []
 
-[tool.uv.sources]
-# 로컬 개발 시 사용 가능
-# edge-system-checker = { path = "." }
-
-[project.optional-dependencies]
-dev = []
+# 빌드 설정 없음 - 스크립트로만 실행
 
