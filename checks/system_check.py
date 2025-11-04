@@ -428,6 +428,189 @@ def check_postgresql_details() -> Dict[str, Any]:
     return results
 
 
+def check_setup_scripts() -> Dict[str, Any]:
+    """
+    post-install_setup.sh와 setup_nut.sh 스크립트가 제대로 적용되었는지 확인
+    
+    post-install_setup.sh 확인 항목:
+    - koast-user 사용자 존재
+    - SSH 서비스 활성화
+    - 시간대 설정 (Asia/Seoul)
+    - GRUB 설정 (TIMEOUT=2, TIMEOUT_STYLE=menu 등)
+    
+    setup_nut.sh 확인 항목:
+    - /etc/nut/upssched.conf 존재 및 올바른 내용
+    - /etc/nut/upssched-cmd 존재 및 실행 권한
+    - 99-force-poweroff 비활성화됨
+    """
+    from utils.ui import print_info
+    
+    results = {}
+    
+    # 1. post-install_setup.sh 확인
+    print("")
+    print_info("설정 스크립트 적용 상태 확인 중...")
+    
+    # 1-1. koast-user 사용자 존재 확인
+    user_result = run_command("id koast-user 2>/dev/null")
+    results['post_install_user'] = {
+        'status': 'PASS' if user_result['success'] else 'FAIL',
+        'value': 'koast-user 존재' if user_result['success'] else 'koast-user 없음'
+    }
+    
+    # 1-2. SSH 서비스 활성화 확인
+    ssh_result = run_command("systemctl is-enabled ssh 2>/dev/null")
+    ssh_enabled = ssh_result['stdout'].strip() in ['enabled', 'enabled-runtime']
+    results['post_install_ssh'] = {
+        'status': 'PASS' if ssh_enabled else 'WARN',
+        'value': ssh_result['stdout'].strip() if ssh_result['success'] else 'Unknown'
+    }
+    
+    # 1-3. 시간대 확인 (Asia/Seoul)
+    tz_result = run_command("timedatectl | grep 'Time zone'")
+    if tz_result['success']:
+        is_seoul = 'Asia/Seoul' in tz_result['stdout']
+        results['post_install_timezone'] = {
+            'status': 'PASS' if is_seoul else 'WARN',
+            'value': tz_result['stdout'].strip(),
+            'expected': 'Asia/Seoul'
+        }
+    else:
+        results['post_install_timezone'] = {
+            'status': 'SKIP',
+            'value': 'Unknown'
+        }
+    
+    # 1-4. GRUB 설정 확인
+    grub_result = run_command("grep -E '^GRUB_TIMEOUT=|^GRUB_TIMEOUT_STYLE=' /etc/default/grub 2>/dev/null")
+    if grub_result['success']:
+        timeout_ok = 'GRUB_TIMEOUT=2' in grub_result['stdout']
+        style_ok = 'GRUB_TIMEOUT_STYLE=menu' in grub_result['stdout']
+        if timeout_ok and style_ok:
+            results['post_install_grub'] = {
+                'status': 'PASS',
+                'value': 'GRUB 설정 정상'
+            }
+        else:
+            results['post_install_grub'] = {
+                'status': 'WARN',
+                'value': f"GRUB 설정 확인 필요: {grub_result['stdout'][:100]}"
+            }
+    else:
+        results['post_install_grub'] = {
+            'status': 'SKIP',
+            'value': 'GRUB 설정 파일 읽기 불가'
+        }
+    
+    # 2. setup_nut.sh 확인
+    # 2-1. upssched.conf 파일 존재 및 내용 확인
+    upssched_conf = '/etc/nut/upssched.conf'
+    if os.path.exists(upssched_conf):
+        try:
+            with open(upssched_conf, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # 중요한 설정이 있는지 확인
+                has_cmdscript = 'CMDSCRIPT' in content
+                has_pipefn = 'PIPEFN' in content
+                has_timer = 'START-TIMER' in content or 'TIMER' in content
+                # force-poweroff 관련 내용이 없는지 확인 (비활성화되어야 함)
+                no_force_poweroff = 'force-poweroff' not in content.lower()
+                
+                if has_cmdscript and has_pipefn and has_timer and no_force_poweroff:
+                    results['nut_setup_config'] = {
+                        'status': 'PASS',
+                        'value': 'upssched.conf 설정 정상'
+                    }
+                else:
+                    issues = []
+                    if not has_cmdscript:
+                        issues.append('CMDSCRIPT 없음')
+                    if not has_pipefn:
+                        issues.append('PIPEFN 없음')
+                    if not has_timer:
+                        issues.append('TIMER 없음')
+                    if not no_force_poweroff:
+                        issues.append('force-poweroff 관련 내용 발견')
+                    
+                    results['nut_setup_config'] = {
+                        'status': 'WARN',
+                        'value': f"upssched.conf 설정 이상: {', '.join(issues)}"
+                    }
+        except Exception as e:
+            results['nut_setup_config'] = {
+                'status': 'FAIL',
+                'value': f"upssched.conf 읽기 실패: {str(e)}"
+            }
+    else:
+        results['nut_setup_config'] = {
+            'status': 'FAIL',
+            'value': 'upssched.conf 파일 없음'
+        }
+    
+    # 2-2. upssched-cmd 파일 존재 및 실행 권한 확인
+    upssched_cmd = '/etc/nut/upssched-cmd'
+    if os.path.exists(upssched_cmd):
+        is_executable = os.access(upssched_cmd, os.X_OK)
+        try:
+            with open(upssched_cmd, 'r', encoding='utf-8') as f:
+                content = f.read()
+                has_fsd = 'fsd' in content.lower()
+                no_force_poweroff = 'force-poweroff' not in content.lower()
+                
+                if is_executable and has_fsd and no_force_poweroff:
+                    results['nut_setup_cmd'] = {
+                        'status': 'PASS',
+                        'value': 'upssched-cmd 정상'
+                    }
+                else:
+                    issues = []
+                    if not is_executable:
+                        issues.append('실행 권한 없음')
+                    if not has_fsd:
+                        issues.append('fsd 관련 내용 없음')
+                    if not no_force_poweroff:
+                        issues.append('force-poweroff 관련 내용 발견')
+                    
+                    results['nut_setup_cmd'] = {
+                        'status': 'WARN',
+                        'value': f"upssched-cmd 이상: {', '.join(issues)}"
+                    }
+        except Exception as e:
+            results['nut_setup_cmd'] = {
+                'status': 'FAIL',
+                'value': f"upssched-cmd 읽기 실패: {str(e)}"
+            }
+    else:
+        results['nut_setup_cmd'] = {
+            'status': 'FAIL',
+            'value': 'upssched-cmd 파일 없음'
+        }
+    
+    # 2-3. 99-force-poweroff 비활성화 확인
+    force_poweroff_path = '/usr/lib/systemd/system-shutdown/99-force-poweroff'
+    force_poweroff_disabled = '/usr/lib/systemd/system-shutdown/99-force-poweroff.disabled'
+    
+    if os.path.exists(force_poweroff_disabled):
+        results['nut_setup_force_poweroff'] = {
+            'status': 'PASS',
+            'value': '99-force-poweroff 비활성화됨'
+        }
+    elif os.path.exists(force_poweroff_path):
+        # 파일이 존재하면 비활성화되지 않음
+        results['nut_setup_force_poweroff'] = {
+            'status': 'WARN',
+            'value': '99-force-poweroff 활성화됨 (비활성화 필요)'
+        }
+    else:
+        # 둘 다 없으면 처음부터 설정되지 않은 상태 (정상)
+        results['nut_setup_force_poweroff'] = {
+            'status': 'PASS',
+            'value': '99-force-poweroff 미설정 (정상)'
+        }
+    
+    return results
+
+
 def check_system_status() -> Dict[str, Any]:
     """전체 시스템 종합 점검"""
     from utils.ui import (
@@ -445,7 +628,8 @@ def check_system_status() -> Dict[str, Any]:
         'java': {},
         'network': {},
         'disk': {},
-        'cron': {}
+        'cron': {},
+        'setup_scripts': {} # 추가된 항목
     }
     
     # 1. OS 설정
@@ -614,6 +798,38 @@ def check_system_status() -> Dict[str, Any]:
         else:
             print_info(f"PostgreSQL {key}: {value}")
     
+    # 10. 설정 스크립트 적용 상태
+    print("")
+    print_info("설정 스크립트 적용 상태 확인 중...")
+    setup_scripts = check_setup_scripts()
+    result['setup_scripts'] = setup_scripts
+    
+    for key, info in setup_scripts.items():
+        status = info.get('status', 'UNKNOWN')
+        value = info.get('value', 'N/A')
+        # 키 이름을 한글로 변환
+        key_names = {
+            'post_install_user': '사용자 (koast-user)',
+            'post_install_ssh': 'SSH 서비스',
+            'post_install_timezone': '시간대 (Asia/Seoul)',
+            'post_install_grub': 'GRUB 설정',
+            'nut_setup_config': 'NUT upssched.conf',
+            'nut_setup_cmd': 'NUT upssched-cmd',
+            'nut_setup_force_poweroff': 'NUT force-poweroff'
+        }
+        display_key = key_names.get(key, key)
+        
+        if status == 'PASS':
+            print_pass(f"{display_key}: {value}")
+        elif status == 'WARN':
+            print_warning(f"{display_key}: {value}")
+        elif status == 'FAIL':
+            print_fail(f"{display_key}: {value}")
+        elif status == 'SKIP':
+            pass  # SKIP 항목은 출력 생략
+        else:
+            print_info(f"{display_key}: {value}")
+    
     # 전체 판정 및 통계
     print("")
     
@@ -630,6 +846,7 @@ def check_system_status() -> Dict[str, Any]:
         ('Cron', cron),
         ('Tomcat', tomcat_details),
         ('PostgreSQL', pg_details),
+        ('설정 스크립트', setup_scripts), # 추가된 카테고리
     ]
     for category_name, category in named_categories:
         for key, item in category.items():
@@ -646,6 +863,18 @@ def check_system_status() -> Dict[str, Any]:
                         label = key
                     elif category_name == '네트워크' and key == 'active_connections':
                         label = '활성 연결'
+                    elif category_name == '설정 스크립트':
+                        # 설정 스크립트 키 이름 매핑
+                        key_labels = {
+                            'post_install_user': '사용자 (koast-user)',
+                            'post_install_ssh': 'SSH 서비스',
+                            'post_install_timezone': '시간대 (Asia/Seoul)',
+                            'post_install_grub': 'GRUB 설정',
+                            'nut_setup_config': 'NUT upssched.conf',
+                            'nut_setup_cmd': 'NUT upssched-cmd',
+                            'nut_setup_force_poweroff': 'NUT force-poweroff'
+                        }
+                        label = key_labels.get(key, key)
                     skip_items.append(f"{category_name}: {label}")
     
     # 통계 계산
