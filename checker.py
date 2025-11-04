@@ -95,7 +95,6 @@ def main():
     print_header("Edge 시스템 점검 도구")
     
     print_info("이 도구는 Edge 시스템의 상태를 순차적으로 점검합니다.")
-    print_info("각 단계마다 결과를 확인하고 다음 단계로 진행할 수 있습니다.")
     print("")
     
     # 설정 로드
@@ -106,6 +105,20 @@ def main():
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         'summary': {}
     }
+    
+    # 전체 실행 모드 선택 (자동/수동)
+    print_info("실행 모드를 선택하세요:")
+    print("  1. 자동 모드 (모든 점검을 자동으로 진행, 확인 없이)")
+    print("  2. 수동 모드 (각 항목마다 확인 후 진행)")
+    run_mode_str = ask_input("실행 모드 선택 [1: 자동 / 2: 수동]", "1")
+    
+    if run_mode_str == "1":
+        full_auto_mode = True
+        print_info("🤖 자동 모드 선택: 모든 점검을 자동으로 진행합니다.")
+    else:
+        full_auto_mode = False
+        print_info("👤 수동 모드 선택: 각 항목마다 확인 후 진행합니다.")
+    print("")
     
     # 카메라 점검 모드 선택
     print_info("카메라 점검 모드를 선택하세요:")
@@ -145,6 +158,11 @@ def main():
             )
             results['ups'] = ups_result
             
+            # 자동 모드면 확인 없이 계속 진행
+            if full_auto_mode:
+                print_info("자동 모드: 다음 단계로 진행합니다.")
+                break
+            
             # 사용자 컨펌
             user_action = ask_continue("UPS 점검 완료. 다음 단계로 진행하시겠습니까?")
             if user_action == 'quit':
@@ -157,7 +175,7 @@ def main():
                 continue  # 루프 계속 (재시도)
             else:
                 break  # 루프 탈출 (계속 진행)
-    
+        
         except KeyboardInterrupt:
             print("")
             print_warning("사용자가 점검을 중단했습니다.")
@@ -167,6 +185,11 @@ def main():
         except Exception as e:
             print_fail(f"UPS 점검 중 오류 발생: {str(e)}")
             results['ups'] = {'status': 'ERROR', 'error': str(e)}
+            
+            # 자동 모드면 오류 발생해도 계속 진행
+            if full_auto_mode:
+                print_info("자동 모드: 오류가 발생했지만 계속 진행합니다.")
+                break
             
             user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
             if user_action == 'quit':
@@ -191,6 +214,11 @@ def main():
                     save_and_exit(results)
                     return
                 
+                # 자동 모드면 확인 없이 계속 진행
+                if full_auto_mode:
+                    print_info("자동 모드: 다음 단계로 진행합니다.")
+                    break
+                
                 # 사용자 컨펌
                 user_action = ask_continue("카메라 점검 완료. 다음 단계로 진행하시겠습니까?")
                 if user_action == 'quit':
@@ -213,6 +241,11 @@ def main():
             except Exception as e:
                 print_fail(f"카메라 점검 중 오류 발생: {str(e)}")
                 results['cameras'] = {'status': 'ERROR', 'error': str(e)}
+                
+                # 자동 모드면 오류 발생해도 계속 진행
+                if full_auto_mode:
+                    print_info("자동 모드: 오류가 발생했지만 계속 진행합니다.")
+                    break
                 
                 user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
                 if user_action == 'quit':
@@ -263,6 +296,11 @@ def main():
             nas_result = check_nas_status(config['nas'])
             results['nas'] = nas_result
             
+            # 자동 모드면 확인 없이 계속 진행
+            if full_auto_mode:
+                print_info("자동 모드: 다음 단계로 진행합니다.")
+                break
+            
             # 사용자 컨펌
             user_action = ask_continue("NAS 점검 완료. 다음 단계로 진행하시겠습니까?")
             if user_action == 'quit':
@@ -285,6 +323,11 @@ def main():
         except Exception as e:
             print_fail(f"NAS 점검 중 오류 발생: {str(e)}")
             results['nas'] = {'status': 'ERROR', 'error': str(e)}
+            
+            # 자동 모드면 오류 발생해도 계속 진행
+            if full_auto_mode:
+                print_info("자동 모드: 오류가 발생했지만 계속 진행합니다.")
+                break
             
             user_action = ask_continue("오류가 발생했습니다. 계속 진행하시겠습니까?")
             if user_action == 'quit':
